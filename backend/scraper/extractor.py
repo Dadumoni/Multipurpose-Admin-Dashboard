@@ -38,6 +38,13 @@ RE_BLOGGER = re.compile(
     re.IGNORECASE,
 )
 
+# Generic embed/player URL — catches plain-text player links in post content
+# e.g. https://vidmap.online/player/embed.php?id=572
+RE_EMBED_PLAYER = re.compile(
+    r'https?://[^\s"'<>\[\]]*(?:/player/|/embed(?:\.php)?|/watch|/video/)(?:[^\s"'<>\[\]]*)[?&]\w+=[^\s"'<>\[\]]+',
+    re.IGNORECASE,
+)
+
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
 
@@ -115,7 +122,13 @@ def extract_video_links_custom(html: str, pattern: re.Pattern) -> list[dict]:
 
 
 def extract_video_links_default(html: str, base_url: str) -> list[dict]:
-    """Default extraction: MP4 direct links + Blogger native player links."""
+    """
+    Default extraction:
+      1. Direct .mp4 URLs
+      2. Blogger native player links
+      3. Generic embed/player URLs (e.g. vidmap.online/player/embed.php?id=123)
+         — covers sites that paste plain-text player URLs in post content
+    """
     links = []
     seen = set()
 
@@ -130,6 +143,13 @@ def extract_video_links_default(html: str, base_url: str) -> list[dict]:
         if url not in seen:
             seen.add(url)
             links.append({"video_link": url, "type": "blogger"})
+
+    # Generic embed/player links — plain text in post body
+    for m in RE_EMBED_PLAYER.finditer(html):
+        url = m.group(0).rstrip(".,;)")  # strip trailing punctuation
+        if url not in seen:
+            seen.add(url)
+            links.append({"video_link": url, "type": "mp4"})
 
     soup = BeautifulSoup(html, "lxml")
     for iframe in soup.find_all("iframe"):
