@@ -95,6 +95,10 @@ async def upload_video_thumbnail(
 # ── Scraper ───────────────────────────────────────────────────────────────────
 
 _active_scrapes: dict[str, dict] = {}
+# Per-job control events: "paused" asyncio.Event — set = running, clear = paused
+_job_pause_events: dict[str, asyncio.Event] = {}
+# Per-job cancel flags
+_job_cancel_flags: dict[str, bool] = {}
 
 
 class ScrapeRequest(BaseModel):
@@ -108,11 +112,15 @@ async def start_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
         raise HTTPException(400, "URL required")
 
     for job in _active_scrapes.values():
-        if job["url"] == url and job["status"] == "running":
+        if job["url"] == url and job["status"] in ("running", "paused"):
             return {"job_id": job["job_id"], "message": "Already running"}
 
     job_id = str(uuid.uuid4())
     _active_scrapes[job_id] = {"job_id": job_id, "url": url, "status": "running", "started_at": time.time()}
+    ev = asyncio.Event()
+    ev.set()  # start unpaused
+    _job_pause_events[job_id] = ev
+    _job_cancel_flags[job_id] = False
 
     background_tasks.add_task(_run_scrape, job_id, url)
     await d1.upsert_site(url)
@@ -122,12 +130,55 @@ async def start_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
 
 async def _run_scrape(job_id: str, url: str):
     try:
-        await crawl_site(url, job_id=job_id)
-        _active_scrapes[job_id]["status"] = "done"
+        await crawl_site(
+            url,
+            job_id=job_id,
+            pause_event=_job_pause_events.get(job_id),
+            cancel_flags=_job_cancel_flags,
+        )
+        if _job_cancel_flags.get(job_id):
+            _active_scrapes[job_id]["status"] = "cancelled"
+        else:
+            _active_scrapes[job_id]["status"] = "done"
     except Exception as e:
         logger.error(f"Scrape job {job_id} failed: {e}")
         _active_scrapes[job_id]["status"] = "error"
         _active_scrapes[job_id]["error"] = str(e)
+    finally:
+        _job_pause_events.pop(job_id, None)
+        _job_cancel_flags.pop(job_id, None)
+
+
+@router.post("/scrape/pause/{job_id}")
+async def pause_scrape(job_id: str):
+    ev = _job_pause_events.get(job_id)
+    if not ev:
+        raise HTTPException(404, "Job not found or already finished")
+    ev.clear()  # block the crawl loop
+    _active_scrapes[job_id]["status"] = "paused"
+    return {"ok": True, "status": "paused"}
+
+
+@router.post("/scrape/resume/{job_id}")
+async def resume_scrape(job_id: str):
+    ev = _job_pause_events.get(job_id)
+    if not ev:
+        raise HTTPException(404, "Job not found or already finished")
+    ev.set()  # unblock the crawl loop
+    _active_scrapes[job_id]["status"] = "running"
+    return {"ok": True, "status": "running"}
+
+
+@router.post("/scrape/cancel/{job_id}")
+async def cancel_scrape(job_id: str):
+    if job_id not in _active_scrapes:
+        raise HTTPException(404, "Job not found")
+    _job_cancel_flags[job_id] = True
+    ev = _job_pause_events.get(job_id)
+    if ev:
+        ev.set()  # unblock if paused so loop can exit
+    _active_scrapes[job_id]["status"] = "cancelled"
+    return {"ok": True, "status": "cancelled"}
 
 
 @router.get("/scrape/status/{job_id}")

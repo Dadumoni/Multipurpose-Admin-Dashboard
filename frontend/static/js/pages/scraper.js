@@ -3,6 +3,7 @@ const ScraperPage = (() => {
   let pollTimer    = null;
   let currentJobId = null;
   let jobHistory   = [];
+  let isPaused     = false;
 
   // Current URL being tracked for settings load/save
   let _settingsUrl = '';
@@ -17,6 +18,62 @@ const ScraperPage = (() => {
     btn.innerHTML     = running
       ? '<span class="spin">⟳</span> Scraping…'
       : '⬡ Scrap';
+
+    // Show/hide control buttons
+    const pauseBtn  = document.getElementById('pauseResumeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    pauseBtn.style.display  = running ? '' : 'none';
+    cancelBtn.style.display = running ? '' : 'none';
+
+    if (!running) {
+      isPaused = false;
+      _setPauseIcon(false);
+    }
+  }
+
+  function _setPauseIcon(paused) {
+    const icon = document.getElementById('pauseResumeIcon');
+    const btn  = document.getElementById('pauseResumeBtn');
+    if (paused) {
+      icon.className = 'fi fi-rr-play pause-resume-anim';
+      btn.title = 'Resume';
+    } else {
+      icon.className = 'fi fi-rr-pause pause-resume-anim';
+      btn.title = 'Pause';
+    }
+  }
+
+  async function togglePause() {
+    if (!currentJobId) return;
+    try {
+      if (isPaused) {
+        await API.resumeScrape(currentJobId);
+        isPaused = false;
+        _setPauseIcon(false);
+        showToast('Resumed ▶', 'success');
+      } else {
+        await API.pauseScrape(currentJobId);
+        isPaused = true;
+        _setPauseIcon(true);
+        showToast('Paused ⏸', 'success');
+      }
+    } catch (e) {
+      showToast('Could not pause/resume: ' + e.message, 'error');
+    }
+  }
+
+  async function cancelScrape() {
+    if (!currentJobId) return;
+    if (!confirm('Cancel this scrape?')) return;
+    try {
+      await API.cancelScrape(currentJobId);
+      showToast('Cancelled ✕', 'error');
+      stopPolling();
+      setRunning(false);
+      updateProgress({ status: 'cancelled', scraped: 0, errors: 0 });
+    } catch (e) {
+      showToast('Could not cancel: ' + e.message, 'error');
+    }
   }
 
   function showProgress(visible) {
@@ -37,8 +94,12 @@ const ScraperPage = (() => {
     let labelText = '';
     if (job.status === 'done') {
       labelText = `Finished — ${job.scraped || 0} videos saved from ${total} posts`;
+    } else if (job.status === 'cancelled') {
+      labelText = `Cancelled after ${current} of ${total} posts`;
     } else if (job.status === 'error') {
       labelText = `Error after ${current} posts`;
+    } else if (job.status === 'paused') {
+      labelText = total > 0 ? `Paused at post ${current} of ${total}` : 'Paused…';
     } else if (total > 0) {
       labelText = `Scraping post ${current} of ${total}`;
     } else {
@@ -49,6 +110,8 @@ const ScraperPage = (() => {
     const statusEl = document.getElementById('progressStatus');
     if (job.status === 'done') {
       statusEl.innerHTML = `<span style="color:var(--success)">✓ Scrape complete. <a href="#links" style="color:var(--amber)" onclick="navigate('links')">View scraped links →</a></span>`;
+    } else if (job.status === 'cancelled') {
+      statusEl.innerHTML = `<span style="color:var(--text-3)">✕ Scrape cancelled.</span>`;
     } else if (job.status === 'error') {
       statusEl.innerHTML = `<span style="color:var(--danger)">✗ ${esc(job.error || 'Scrape failed')}</span>`;
     } else {
@@ -183,7 +246,16 @@ const ScraperPage = (() => {
         jobEntry.scraped = job.scraped;
         renderJobHistory();
 
-        if (job.status === 'done' || job.status === 'error') {
+        // Sync paused state from server
+        if (job.status === 'paused' && !isPaused) {
+          isPaused = true;
+          _setPauseIcon(true);
+        } else if (job.status === 'running' && isPaused) {
+          isPaused = false;
+          _setPauseIcon(false);
+        }
+
+        if (['done', 'error', 'cancelled'].includes(job.status)) {
           stopPolling();
           setRunning(false);
           OverviewPage.loadStats();
@@ -238,6 +310,8 @@ const ScraperPage = (() => {
     document.getElementById('scrapeUrl').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) startScrape();
     });
+    document.getElementById('pauseResumeBtn').addEventListener('click', togglePause);
+    document.getElementById('cancelBtn').addEventListener('click', cancelScrape);
     bindSettingsUI();
     renderJobHistory();
   }

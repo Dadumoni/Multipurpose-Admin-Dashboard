@@ -37,9 +37,12 @@ const API = (() => {
     uploadThumbnail: (id, fd)   => req('POST',   `/videos/${id}/thumbnail`, fd, true),
 
     // ── Scraper ───────────────────────────────────────────────────
-    startScrape:  (url)    => req('POST', '/scrape/start', { url }),
-    scrapeStatus: (jobId)  => req('GET',  `/scrape/status/${jobId}`),
-    activeScrapes:()       => req('GET',  '/scrape/active'),
+    startScrape:   (url)    => req('POST', '/scrape/start',          { url }),
+    scrapeStatus:  (jobId)  => req('GET',  `/scrape/status/${jobId}`),
+    activeScrapes: ()       => req('GET',  '/scrape/active'),
+    pauseScrape:   (jobId)  => req('POST', `/scrape/pause/${jobId}`),
+    resumeScrape:  (jobId)  => req('POST', `/scrape/resume/${jobId}`),
+    cancelScrape:  (jobId)  => req('POST', `/scrape/cancel/${jobId}`),
 
     // ── Site settings ─────────────────────────────────────────────
     getScrapeSettings:  (url)  => req('GET',  `/scrape/settings?url=${encodeURIComponent(url)}`),

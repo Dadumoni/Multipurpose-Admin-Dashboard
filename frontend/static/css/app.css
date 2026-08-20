@@ -895,3 +895,26 @@ input[type="file"].input::-webkit-file-upload-button {
   width: 14px;
   height: 14px;
 }
+
+/* ── Pause/Resume icon animation ────────────────────────────────── */
+@keyframes iconSwap {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0; transform: scale(0.6) rotate(-15deg); }
+  60%  { opacity: 0; transform: scale(0.6) rotate(15deg); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.pause-resume-anim {
+  display: inline-block;
+  animation: iconSwap 0.35s ease;
+}
+.btn-icon-only {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-3);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.btn-icon-only:hover {
+  background: var(--bg-4);
+  border-color: var(--border-hi);
+}

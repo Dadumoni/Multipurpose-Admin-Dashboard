@@ -126,39 +126,80 @@ def extract_video_links_default(html: str, base_url: str) -> list[dict]:
     Default extraction:
       1. Direct .mp4 URLs
       2. Blogger native player links
-      3. Generic embed/player URLs (e.g. vidmap.online/player/embed.php?id=123)
-         — covers sites that paste plain-text player URLs in post content
+      3. Generic embed/player URLs in plain text
+      4. <iframe src> and <iframe data-src> (lazy-load pattern)
+      5. Any URL inside <script> tags that looks like an embed/player/stream
+      6. JS variable assignments: src = "...", file: "...", source: "..."
     """
     links = []
     seen = set()
 
+    SKIP_DOMAINS = {"youtube.com", "youtu.be", "google.com", "googleapis.com",
+                    "gstatic.com", "facebook.com", "twitter.com", "instagram.com",
+                    "disqus.com", "gravatar.com", "wp.com", "wordpress.com"}
+
+    def _is_skip(url: str) -> bool:
+        try:
+            host = urlparse(url).netloc.lower().lstrip("www.")
+            return any(host == d or host.endswith("." + d) for d in SKIP_DOMAINS)
+        except Exception:
+            return False
+
+    def _add(url: str, vtype: str):
+        url = url.strip().rstrip("\"',;) ")
+        if not url or url in seen or _is_skip(url):
+            return
+        seen.add(url)
+        links.append({"video_link": url, "type": vtype})
+
+    # 1. Direct .mp4 URLs
     for m in RE_MP4.finditer(html):
-        url = m.group(0)
-        if url not in seen:
-            seen.add(url)
-            links.append({"video_link": url, "type": "mp4"})
+        _add(m.group(0), "mp4")
 
+    # 2. Blogger native player
     for m in RE_BLOGGER.finditer(html):
-        url = m.group(0)
-        if url not in seen:
-            seen.add(url)
-            links.append({"video_link": url, "type": "blogger"})
+        _add(m.group(0), "blogger")
 
-    # Generic embed/player links — plain text in post body
+    # 3. Generic embed/player plain-text links
     for m in RE_EMBED_PLAYER.finditer(html):
-        url = m.group(0).rstrip(".,;)")  # strip trailing punctuation
-        if url not in seen:
-            seen.add(url)
-            links.append({"video_link": url, "type": "mp4"})
+        _add(m.group(0), "embed")
 
     soup = BeautifulSoup(html, "lxml")
+
+    # 4. All iframes — src AND data-src (lazy-load)
     for iframe in soup.find_all("iframe"):
-        src = iframe.get("src", "")
-        if "youtube.com" in src:
-            continue
-        if "blogger.com/video" in src and src not in seen:
-            seen.add(src)
-            links.append({"video_link": src, "type": "blogger"})
+        for attr in ("src", "data-src", "data-lazy-src"):
+            src = iframe.get(attr, "").strip()
+            if not src or src.startswith("about:") or src.startswith("javascript:"):
+                continue
+            if "blogger.com/video" in src:
+                _add(src, "blogger")
+            elif "youtube.com" not in src and "youtu.be" not in src:
+                _add(src, "embed")
+
+    # 5. Scan every <script> tag for embed/player/stream/mp4 URLs
+    RE_JS_URL = re.compile(
+        r"""(?:src|file|source|url|video|stream|embed|player)\s*[:=]\s*["']([^"']{10,})["']""",
+        re.IGNORECASE,
+    )
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        # 5a. JS key-value: src: "url", file: "url", etc.
+        for m in RE_JS_URL.finditer(text):
+            candidate = m.group(1).strip()
+            if candidate.startswith("http"):
+                if ".mp4" in candidate.lower():
+                    _add(candidate, "mp4")
+                elif any(x in candidate.lower() for x in ["/embed", "/player", "/stream", "/video/"]):
+                    _add(candidate, "embed")
+        # 5b. Any raw http URL in script containing known video path parts
+        for m in re.finditer(r'https?://[^\s"\'\\<>]{10,}', text):
+            u = m.group(0).rstrip("\"',;)\\")
+            if any(x in u.lower() for x in [".mp4", "/embed", "/player/", "/stream", "/video/"]):
+                if ".mp4" in u.lower():
+                    _add(u, "mp4")
+                else:
+                    _add(u, "embed")
 
     return links
 
@@ -490,10 +531,17 @@ async def get_post_urls(site_url: str, client: httpx.AsyncClient, last_post_url:
 
 # ── Site crawler ───────────────────────────────────────────────────────────────
 
-async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: str | None = None):
+async def crawl_site(
+    site_url: str,
+    last_post_url: str | None = None,
+    job_id: str | None = None,
+    pause_event: asyncio.Event | None = None,
+    cancel_flags: dict | None = None,
+):
     """
     Full site crawl. Publishes progress updates to MongoDB crawler_temp.
     Loads per-site settings from MongoDB site_settings.
+    Supports pause (pause_event) and cancel (cancel_flags[job_id]).
     """
     # Load per-site custom settings
     site_cfg = await mongo.get_site_settings(site_url)
@@ -514,9 +562,26 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
     scraped = 0
     errors = 0
     first_post_url = post_urls[0] if post_urls else None
+    cancelled = False
 
     async with httpx.AsyncClient(timeout=30) as client:
         for i, post_url in enumerate(post_urls):
+            # ── Check cancel ────────────────────────────────────────────
+            if cancel_flags and job_id and cancel_flags.get(job_id):
+                logger.info(f"Crawl cancelled: {site_url} after {i} posts")
+                cancelled = True
+                break
+
+            # ── Wait if paused ──────────────────────────────────────────
+            if pause_event:
+                await pause_event.wait()
+
+            # ── Check cancel again after unpausing ──────────────────────
+            if cancel_flags and job_id and cancel_flags.get(job_id):
+                cancelled = True
+                break
+
+            status_str = "running"
             await temp_col.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -525,7 +590,7 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
                     "total": total,
                     "scraped": scraped,
                     "errors": errors,
-                    "status": "running",
+                    "status": status_str,
                 }},
                 upsert=True,
             )
@@ -542,9 +607,10 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
     await d1.update_site_scan(site_url, first_post_url)
     await d1.upsert_site(site_url)
 
+    final_status = "cancelled" if cancelled else "done"
     await temp_col.update_one(
         {"job_id": job_id},
-        {"$set": {"status": "done", "scraped": scraped, "errors": errors}},
+        {"$set": {"status": final_status, "scraped": scraped, "errors": errors}},
         upsert=True,
     )
     await history_col.insert_one({
@@ -553,5 +619,6 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
         "errors": errors,
         "total_posts": total,
         "finished_at": asyncio.get_event_loop().time(),
+        "cancelled": cancelled,
     })
-    logger.info(f"Crawl done: {site_url} — {scraped} saved, {errors} errors")
+    logger.info(f"Crawl {final_status}: {site_url} — {scraped} saved, {errors} errors")
