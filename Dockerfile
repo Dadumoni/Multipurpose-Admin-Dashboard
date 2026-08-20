@@ -25,9 +25,10 @@ WORKDIR /build
 # Requirements pehle copy karo (Docker layer cache optimize hoga)
 COPY requirements.txt .
 
-# Saare packages ke wheels build karo
-RUN pip install --upgrade pip \
- && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+# FIX: "pip install --upgrade pip" hata diya —
+# Koyeb ke cached layer me pip ka metadata corrupt tha (~ip prefix).
+# pip 24 wheels build karne ke liye bilkul theek hai, upgrade zaroori nahi.
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 
 # ── Stage 2: Production image ─────────────────────────────────────────────────
