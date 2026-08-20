@@ -190,4 +190,3 @@ CREATE TABLE visitors (
 | `monitor_jobs` | Per-site status + last run |
 | `scan_history` | Log of completed scans |
 | `crawler_temp` | Live progress state per job |
-# Multipurpose-Admin-Dashboard
