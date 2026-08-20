@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multipurpose Tool — Admin</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<!-- ── Sidebar ──────────────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span class="logo-icon">⬡</span>
+    <span class="logo-text">MPTool</span>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item active" data-page="overview" href="#overview">
+      <span class="nav-icon">◈</span> Overview
+    </a>
+    <a class="nav-item" data-page="links" href="#links">
+      <span class="nav-icon">◉</span> Scraped Links
+    </a>
+    <a class="nav-item" data-page="scraper" href="#scraper">
+      <span class="nav-icon">◎</span> Scrapper
+    </a>
+    <a class="nav-item" data-page="monitor" href="#monitor">
+      <span class="nav-icon">◌</span> Site Monitoring
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Connecting…</span>
+  </div>
+</aside>
+
+<!-- ── Main ─────────────────────────────────────────────────────── -->
+<main class="main" id="main">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <button class="menu-toggle" id="menuToggle">☰</button>
+    <h1 class="page-title" id="pageTitle">Overview</h1>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="refreshBtn" title="Refresh">⟳</button>
+    </div>
+  </header>
+
+  <!-- Pages -->
+  <div class="pages">
+
+    <!-- ── Overview ─────────────────────────────────────────────── -->
+    <section class="page active" id="page-overview">
+      <div class="stat-grid" id="statGrid">
+        <div class="stat-card" id="stat-total">
+          <div class="stat-label">Total Videos</div>
+          <div class="stat-value" id="statTotal">—</div>
+          <div class="stat-sub">MP4 + Blogger combined</div>
+        </div>
+        <div class="stat-card accent-mp4" id="stat-mp4">
+          <div class="stat-label">Total MP4</div>
+          <div class="stat-value" id="statMp4">—</div>
+          <div class="stat-sub">Direct video files</div>
+        </div>
+        <div class="stat-card accent-blogger" id="stat-blogger">
+          <div class="stat-label">Total Blogger</div>
+          <div class="stat-value" id="statBlogger">—</div>
+          <div class="stat-sub">Native player links</div>
+        </div>
+        <div class="stat-card accent-views" id="stat-views">
+          <div class="stat-label">Total Views</div>
+          <div class="stat-value" id="statViews">—</div>
+          <div class="stat-sub">All-time plays</div>
+        </div>
+        <div class="stat-card accent-visitors" id="stat-visitors">
+          <div class="stat-label">Total Visitors</div>
+          <div class="stat-value" id="statVisitors">—</div>
+          <div class="stat-sub">Unique IPs</div>
+        </div>
+        <div class="stat-card accent-sites" id="stat-sites">
+          <div class="stat-label">Monitoring Sites</div>
+          <div class="stat-value" id="statSites">—</div>
+          <div class="stat-sub">Active watchers</div>
+        </div>
+      </div>
+
+      <div class="section-title">Recent Scan History</div>
+      <div class="table-wrap">
+        <table class="data-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>Site</th>
+              <th>Posts Found</th>
+              <th>Saved</th>
+              <th>Errors</th>
+              <th>Finished</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Scraped Links ─────────────────────────────────────────── -->
+    <section class="page" id="page-links">
+      <div class="toolbar">
+        <input class="input search-input" id="searchInput" placeholder="Search title or slug…" type="text" />
+        <select class="input select-input" id="typeFilter">
+          <option value="">All types</option>
+          <option value="mp4">MP4</option>
+          <option value="blogger">Blogger</option>
+        </select>
+        <div class="toolbar-right">
+          <button class="btn btn-danger btn-sm" id="bulkDeleteBtn" disabled>Delete Selected</button>
+          <span class="selected-count" id="selectedCount"></span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table links-table" id="linksTable">
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="selectAll" /></th>
+              <th class="col-thumb">Thumb</th>
+              <th>Title / Slug</th>
+              <th class="col-type">Type</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="linksBody">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="linksPagination"></div>
+    </section>
+
+    <!-- ── Scrapper ──────────────────────────────────────────────── -->
+    <section class="page" id="page-scraper">
+      <div class="scraper-card">
+        <div class="scraper-header">
+          <h2>Web Scrapper</h2>
+          <p class="muted">Enter a Blogger / WordPress site URL to crawl all posts and extract video links.</p>
+        </div>
+        <div class="scraper-form">
+          <input class="input url-input" id="scrapeUrl" placeholder="https://example.blogspot.com" type="url" />
+          <button class="btn btn-primary" id="scrapeBtn">⬡ Scrap</button>
+        </div>
+        <div class="scraper-info">
+          <span class="info-badge">10s delay between posts</span>
+          <span class="info-badge">MP4 + Blogger links extracted</span>
+          <span class="info-badge">Thumbnails uploaded to R2</span>
+        </div>
+
+        <!-- Live progress -->
+        <div class="progress-panel" id="progressPanel" style="display:none">
+          <div class="progress-header">
+            <span class="progress-label" id="progressLabel">Initialising…</span>
+            <span class="progress-pct" id="progressPct">0%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="progressBar" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span>Current: <code id="progressUrl">—</code></span>
+            <span>Saved: <strong id="progressSaved">0</strong></span>
+            <span>Errors: <strong id="progressErrors">0</strong></span>
+          </div>
+          <div class="progress-status" id="progressStatus"></div>
+        </div>
+      </div>
+
+      <!-- Session job history -->
+      <div class="section-title" style="margin-top:32px">This Session</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Site URL</th>
+              <th>Status</th>
+              <th>Saved</th>
+              <th>Started</th>
+            </tr>
+          </thead>
+          <tbody id="jobHistoryBody">
+            <tr><td colspan="4" class="empty" style="padding:16px">No scrapes this session.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Site Monitoring ───────────────────────────────────────── -->
+    <section class="page" id="page-monitor">
+      <div class="monitor-header">
+        <h2>Site Monitoring</h2>
+        <p class="muted">Sites are scanned every 24 hours. Only newly published posts are processed.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table monitor-table" id="monitorTable">
+          <thead>
+            <tr>
+              <th>Site URL</th>
+              <th>Last Scanned</th>
+              <th>Last Post</th>
+              <th>Next Scan</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="monitorBody">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div><!-- /pages -->
+</main>
+
+<!-- ── Modals ────────────────────────────────────────────────────── -->
+
+<!-- Preview modal -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal modal-preview">
+    <div class="modal-header">
+      <span class="modal-title" id="previewTitle">Preview</span>
+      <button class="modal-close" data-modal="previewModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <video class="video-player" id="previewPlayer" controls></video>
+    </div>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal modal-edit">
+    <div class="modal-header">
+      <span class="modal-title">Edit Video</span>
+      <button class="modal-close" data-modal="editModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editId" />
+      <div class="form-row">
+        <label class="form-label">Thumbnail</label>
+        <div class="thumb-status" id="editThumbLabel" style="font-size:11px;color:var(--text-3);margin-bottom:8px"></div>
+        <div class="thumb-preview-wrap">
+          <img class="thumb-preview" id="editThumbPreview" src="" alt="" />
+          <button class="btn btn-danger btn-sm" id="deleteThumbBtn">Delete Original</button>
+        </div>
+        <label class="form-label mt">Upload New Thumbnail → saves to R2 as <code style="font-size:10px;color:var(--blogger)">thumbnail_2</code></label>
+        <input class="input" id="editThumbFile" type="file" accept="image/*" style="padding:5px" />
+        <label class="checkbox-label" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2);cursor:pointer">
+          <input type="checkbox" id="deleteOriginalCb" />
+          Also delete original thumbnail from R2 after upload
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Title</label>
+        <input class="input" id="editTitle" type="text" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Slug</label>
+        <div style="display:flex;gap:8px">
+          <input class="input" id="editSlug" type="text" style="flex:1" />
+          <button class="btn btn-ghost btn-sm" id="regenSlugBtn" title="Generate new slug">⟳ Regen</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Video Link</label>
+        <input class="input" id="editVideoLink" type="url" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Type</label>
+        <select class="input" id="editType">
+          <option value="mp4">MP4</option>
+          <option value="blogger">Blogger</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-modal="editModal">Cancel</button>
+        <button class="btn btn-primary" id="saveEditBtn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm delete modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal modal-confirm">
+    <div class="modal-header">
+      <span class="modal-title">Confirm Delete</span>
+      <button class="modal-close" data-modal="deleteModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="deleteMsg">Are you sure you want to delete this video?</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-modal="deleteModal">Cancel</button>
+        <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/pages/overview.js"></script>
+<script src="/static/js/pages/links.js"></script>
+<script src="/static/js/pages/scraper.js"></script>
+<script src="/static/js/pages/monitor.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
