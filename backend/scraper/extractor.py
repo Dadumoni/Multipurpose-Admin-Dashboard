@@ -41,7 +41,7 @@ RE_BLOGGER = re.compile(
 # Generic embed/player URL — catches plain-text player links in post content
 # e.g. https://vidmap.online/player/embed.php?id=572
 RE_EMBED_PLAYER = re.compile(
-    r'https?://[^\s"'<>\[\]]*(?:/player/|/embed(?:\.php)?|/watch|/video/)(?:[^\s"'<>\[\]]*)[?&]\w+=[^\s"'<>\[\]]+',
+    r"""https?://[^\s"'<>\[\]]*(?:/player/|/embed(?:\.php)?|/watch|/video/)(?:[^\s"'<>\[\]]*)[?&]\w+=[^\s"'<>\[\]]+""",
     re.IGNORECASE,
 )
 
