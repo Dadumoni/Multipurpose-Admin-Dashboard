@@ -1,8 +1,11 @@
 """
 Scraper / extractor core.
 Supports:
-  - Blogger-style sites (fetches sitemap or paginated index)
+  - Blogger-style sites (fetches Atom feed, fully paginated)
+  - WordPress sites (REST API paginated, RSS fallback)
+  - Generic sitemap fallback
   - Extracts MP4 links and Blogger native video player tokens
+  - Custom per-site video/poster pattern (stored in MongoDB site_settings)
   - Downloads poster/thumbnail and uploads to R2
   - Inserts records into D1
 """
@@ -35,9 +38,6 @@ RE_BLOGGER = re.compile(
     re.IGNORECASE,
 )
 
-# Blogger video container — data-video-id / docid attributes
-RE_BLOGGER_DOCID = re.compile(r'docid=(-?\d+)', re.IGNORECASE)
-
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
 
@@ -66,33 +66,76 @@ async def download_image(url: str, client: httpx.AsyncClient) -> bytes | None:
 
 # ── Link extraction ────────────────────────────────────────────────────────────
 
-def extract_video_links(html: str, base_url: str) -> list[dict]:
+def _build_custom_pattern(example_url: str) -> re.Pattern | None:
     """
-    Returns list of { video_link, type } dicts found in the page HTML.
+    Given an example URL like:
+      https://zerostorage.net/api/files/download/a2e9b243-1e90-4e6c-a328-566ee4a3c2ed?track=true
+    Build a regex that matches URLs with the same base path but any UUID/ID segment.
+    Strategy:
+      1. Parse the URL
+      2. Replace any UUID-like or long hex/alphanumeric segments (8+ chars) with a wildcard group
+      3. Escape everything else
     """
+    if not example_url:
+        return None
+    try:
+        parsed = urlparse(example_url)
+        # Build pattern from scheme + host + path (ignore query for matching)
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        # Split path into parts and replace ID-like segments with wildcards
+        parts = base.split("/")
+        pattern_parts = []
+        for part in parts:
+            # UUID or long alphanumeric/hex segment → wildcard
+            if re.fullmatch(r'[0-9a-fA-F\-]{8,}', part):
+                pattern_parts.append(r'[0-9a-zA-Z\-_]{4,}')
+            else:
+                pattern_parts.append(re.escape(part))
+        pattern_str = r"/".join(pattern_parts)
+        # Allow optional query string at the end
+        pattern_str += r'(?:\?[^\s"\'<>]*)?'
+        return re.compile(pattern_str, re.IGNORECASE)
+    except Exception as e:
+        logger.warning(f"Could not build custom pattern from '{example_url}': {e}")
+        return None
+
+
+def extract_video_links_custom(html: str, pattern: re.Pattern) -> list[dict]:
+    """Extract video links using a custom compiled pattern."""
+    links = []
+    seen = set()
+    for m in pattern.finditer(html):
+        url = m.group(0)
+        if url not in seen:
+            seen.add(url)
+            # Determine type
+            vtype = "mp4" if url.lower().endswith(".mp4") or ".mp4?" in url.lower() else "mp4"
+            links.append({"video_link": url, "type": vtype})
+    return links
+
+
+def extract_video_links_default(html: str, base_url: str) -> list[dict]:
+    """Default extraction: MP4 direct links + Blogger native player links."""
     links = []
     seen = set()
 
-    # MP4 direct links
     for m in RE_MP4.finditer(html):
         url = m.group(0)
         if url not in seen:
             seen.add(url)
             links.append({"video_link": url, "type": "mp4"})
 
-    # Blogger video player links
     for m in RE_BLOGGER.finditer(html):
         url = m.group(0)
         if url not in seen:
             seen.add(url)
             links.append({"video_link": url, "type": "blogger"})
 
-    # Blogger <iframe> with video.blogger.com src
     soup = BeautifulSoup(html, "lxml")
     for iframe in soup.find_all("iframe"):
         src = iframe.get("src", "")
-        if "video.blogger.com" in src or "youtube.com" in src:
-            continue  # skip YouTube
+        if "youtube.com" in src:
+            continue
         if "blogger.com/video" in src and src not in seen:
             seen.add(src)
             links.append({"video_link": src, "type": "blogger"})
@@ -113,6 +156,12 @@ def extract_thumbnail(soup: BeautifulSoup, base_url: str) -> str | None:
     return None
 
 
+def extract_thumbnail_custom(html: str, pattern: re.Pattern) -> str | None:
+    """Extract poster/thumbnail using a custom pattern."""
+    m = pattern.search(html)
+    return m.group(0) if m else None
+
+
 def extract_title(soup: BeautifulSoup) -> str:
     og = soup.find("meta", property="og:title")
     if og and og.get("content"):
@@ -125,9 +174,10 @@ def extract_title(soup: BeautifulSoup) -> str:
 
 # ── Post scraper ───────────────────────────────────────────────────────────────
 
-async def scrape_post(url: str, client: httpx.AsyncClient) -> list[dict]:
+async def scrape_post(url: str, client: httpx.AsyncClient, site_cfg: dict | None = None) -> list[dict]:
     """
     Scrape a single post URL.
+    site_cfg: result of mongo.get_site_settings() — controls custom mode.
     Returns list of saved record dicts.
     """
     logger.info(f"Scraping: {url}")
@@ -139,12 +189,27 @@ async def scrape_post(url: str, client: httpx.AsyncClient) -> list[dict]:
 
     soup = BeautifulSoup(html, "lxml")
     title = extract_title(soup)
-    thumb_url = extract_thumbnail(soup, url)
-    video_links = extract_video_links(html, url)
+
+    cfg = site_cfg or {}
+    custom_mode = cfg.get("custom_mode", False)
+
+    # ── Video links ──────────────────────────────────────────────────────────
+    if custom_mode and cfg.get("video_pattern"):
+        compiled = _build_custom_pattern(cfg["video_pattern"])
+        video_links = extract_video_links_custom(html, compiled) if compiled else extract_video_links_default(html, url)
+    else:
+        video_links = extract_video_links_default(html, url)
 
     if not video_links:
         logger.info(f"No video links found: {url}")
         return []
+
+    # ── Thumbnail ────────────────────────────────────────────────────────────
+    if custom_mode and not cfg.get("poster_keep_default", True) and cfg.get("poster_pattern"):
+        compiled_poster = _build_custom_pattern(cfg["poster_pattern"])
+        thumb_url = extract_thumbnail_custom(html, compiled_poster) if compiled_poster else extract_thumbnail(soup, url)
+    else:
+        thumb_url = extract_thumbnail(soup, url)
 
     # Download and upload thumbnail once
     r2_thumb = None
@@ -155,7 +220,7 @@ async def scrape_post(url: str, client: httpx.AsyncClient) -> list[dict]:
                 r2_thumb = await upload_thumbnail(img_data)
             except Exception as e:
                 logger.warning(f"R2 upload failed, falling back to original: {e}")
-                r2_thumb = thumb_url  # fallback
+                r2_thumb = thumb_url
 
     saved = []
     for link in video_links:
@@ -183,10 +248,9 @@ async def scrape_post(url: str, client: httpx.AsyncClient) -> list[dict]:
     return saved
 
 
-# ── Site crawler ───────────────────────────────────────────────────────────────
+# ── Platform detection ─────────────────────────────────────────────────────────
 
 def _detect_platform(site_url: str, html: str) -> str:
-    """Heuristically detect Blogger vs WordPress."""
     if "blogspot.com" in site_url:
         return "blogger"
     if "wp-content" in html or "wp-json" in html or "wordpress" in html.lower():
@@ -196,8 +260,10 @@ def _detect_platform(site_url: str, html: str) -> str:
     return "unknown"
 
 
+# ── Post discovery ─────────────────────────────────────────────────────────────
+
 async def _get_blogger_posts(site_url: str, client: httpx.AsyncClient, last_post_url: str | None) -> list[str]:
-    """Paginate through Blogger Atom feed (max 500 per page)."""
+    """Paginate fully through Blogger Atom feed."""
     post_urls = []
     base = site_url.rstrip("/")
     start_index = 1
@@ -238,21 +304,35 @@ async def _get_blogger_posts(site_url: str, client: httpx.AsyncClient, last_post
 
 async def _get_wordpress_posts(site_url: str, client: httpx.AsyncClient, last_post_url: str | None) -> list[str]:
     """
-    WordPress REST API → /wp-json/wp/v2/posts (paginated).
-    Falls back to RSS feed if REST API is disabled.
+    WordPress REST API fully paginated → RSS fallback → sitemap fallback.
+    Uses X-WP-TotalPages header to know exact page count.
     """
     post_urls = []
     base = site_url.rstrip("/")
 
-    # Try WP REST API first
+    # ── REST API (paginated using total pages header) ──────────────────────
     page = 1
     per_page = 100
+    total_pages = None
+
     while True:
-        api_url = f"{base}/wp-json/wp/v2/posts?per_page={per_page}&page={page}&_fields=link,date&orderby=date&order=desc"
+        api_url = (
+            f"{base}/wp-json/wp/v2/posts"
+            f"?per_page={per_page}&page={page}&_fields=link&orderby=date&order=desc"
+        )
         try:
             r = await client.get(api_url, timeout=20, follow_redirects=True)
+            if r.status_code == 400:
+                # page beyond range
+                break
             if r.status_code != 200:
                 break
+
+            # Read total pages from header on first call
+            if total_pages is None:
+                total_pages = int(r.headers.get("X-WP-TotalPages", 1))
+                logger.info(f"WordPress REST: {total_pages} total pages for {site_url}")
+
             posts = r.json()
             if not posts:
                 break
@@ -266,38 +346,53 @@ async def _get_wordpress_posts(site_url: str, client: httpx.AsyncClient, last_po
                 if url:
                     post_urls.append(url)
 
-            if found_stop or len(posts) < per_page:
+            if found_stop or page >= total_pages:
                 break
             page += 1
-        except Exception:
+
+        except Exception as e:
+            logger.warning(f"WordPress REST API error page {page}: {e}")
             break
 
     if post_urls:
         logger.info(f"WordPress REST API: found {len(post_urls)} posts for {site_url}")
         return post_urls
 
-    # Fallback: RSS feed
+    # ── RSS fallback ───────────────────────────────────────────────────────
+    logger.info(f"WordPress REST failed, trying RSS for {site_url}")
     feed_url = f"{base}/feed/"
-    try:
-        html = await fetch_html(feed_url, client)
-        soup = BeautifulSoup(html, "lxml-xml")
-        for item in soup.find_all("item"):
-            link = item.find("link")
-            if link:
-                url = link.text.strip() or link.next_sibling
-                if url and url != last_post_url:
-                    post_urls.append(url.strip())
-                elif url == last_post_url:
-                    break
-    except Exception as e:
-        logger.warning(f"WordPress RSS fallback failed for {site_url}: {e}")
+    rss_page = 1
+    while True:
+        try:
+            paged_url = f"{feed_url}?paged={rss_page}" if rss_page > 1 else feed_url
+            html = await fetch_html(paged_url, client)
+            soup = BeautifulSoup(html, "lxml-xml")
+            items = soup.find_all("item")
+            if not items:
+                break
+            found_stop = False
+            for item in items:
+                link = item.find("link")
+                if link:
+                    url = (link.text or "").strip() or (link.next_sibling or "").strip()
+                    if url == last_post_url:
+                        found_stop = True
+                        break
+                    if url:
+                        post_urls.append(url)
+            if found_stop or len(items) < 10:
+                break
+            rss_page += 1
+        except Exception as e:
+            logger.warning(f"WordPress RSS page {rss_page} failed: {e}")
+            break
 
     logger.info(f"WordPress RSS: found {len(post_urls)} posts for {site_url}")
     return post_urls
 
 
 async def _get_sitemap_posts(site_url: str, client: httpx.AsyncClient, last_post_url: str | None) -> list[str]:
-    """Generic sitemap.xml fallback — works for any CMS."""
+    """Generic sitemap fallback — works for any CMS."""
     post_urls = []
     base = site_url.rstrip("/")
 
@@ -307,7 +402,6 @@ async def _get_sitemap_posts(site_url: str, client: httpx.AsyncClient, last_post
             html = await fetch_html(sitemap_url, client)
             soup = BeautifulSoup(html, "lxml-xml")
 
-            # Sitemap index — recurse into sub-sitemaps
             for sm in soup.find_all("sitemap"):
                 loc = sm.find("loc")
                 if loc:
@@ -325,7 +419,6 @@ async def _get_sitemap_posts(site_url: str, client: httpx.AsyncClient, last_post
                     except Exception:
                         continue
 
-            # Regular sitemap
             for url_tag in soup.find_all("url"):
                 loc = url_tag.find("loc")
                 if loc:
@@ -345,14 +438,7 @@ async def _get_sitemap_posts(site_url: str, client: httpx.AsyncClient, last_post
 
 
 async def get_post_urls(site_url: str, client: httpx.AsyncClient, last_post_url: str | None = None) -> list[str]:
-    """
-    Auto-detect platform and discover post URLs.
-    Strategy order:
-      Blogger  → Atom feed (paginated) → sitemap fallback
-      WordPress → REST API → RSS feed → sitemap fallback
-      Unknown   → sitemap → RSS feed
-    """
-    # Fetch homepage to detect platform
+    """Auto-detect platform and discover ALL post URLs (fully paginated)."""
     try:
         homepage = await fetch_html(site_url, client)
         platform = _detect_platform(site_url, homepage)
@@ -382,10 +468,17 @@ async def get_post_urls(site_url: str, client: httpx.AsyncClient, last_post_url:
     return urls
 
 
+# ── Site crawler ───────────────────────────────────────────────────────────────
+
 async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: str | None = None):
     """
     Full site crawl. Publishes progress updates to MongoDB crawler_temp.
+    Loads per-site settings from MongoDB site_settings.
     """
+    # Load per-site custom settings
+    site_cfg = await mongo.get_site_settings(site_url)
+    logger.info(f"Site config for {site_url}: custom_mode={site_cfg.get('custom_mode')}")
+
     async with httpx.AsyncClient(timeout=30) as client:
         post_urls = await get_post_urls(site_url, client, last_post_url)
 
@@ -404,7 +497,6 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
 
     async with httpx.AsyncClient(timeout=30) as client:
         for i, post_url in enumerate(post_urls):
-            # Update progress in MongoDB
             await temp_col.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -418,7 +510,7 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
                 upsert=True,
             )
 
-            results = await scrape_post(post_url, client)
+            results = await scrape_post(post_url, client, site_cfg)
             if results:
                 scraped += len(results)
             else:
@@ -427,7 +519,6 @@ async def crawl_site(site_url: str, last_post_url: str | None = None, job_id: st
             if i < total - 1:
                 await asyncio.sleep(settings.SCRAPE_DELAY)
 
-    # Finalise
     await d1.update_site_scan(site_url, first_post_url)
     await d1.upsert_site(site_url)
 

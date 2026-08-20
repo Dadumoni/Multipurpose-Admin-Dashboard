@@ -76,7 +76,6 @@ async def upload_video_thumbnail(
     file: UploadFile = File(...),
     delete_original: bool = Form(False),
 ):
-    """Upload a new thumbnail to R2, save URL as thumbnail_2."""
     row = await d1.get_video(vid)
     if not row:
         raise HTTPException(404, "Video not found")
@@ -108,7 +107,6 @@ async def start_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
     if not url:
         raise HTTPException(400, "URL required")
 
-    # Prevent duplicate jobs
     for job in _active_scrapes.values():
         if job["url"] == url and job["status"] == "running":
             return {"job_id": job["job_id"], "message": "Already running"}
@@ -117,8 +115,6 @@ async def start_scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
     _active_scrapes[job_id] = {"job_id": job_id, "url": url, "status": "running", "started_at": time.time()}
 
     background_tasks.add_task(_run_scrape, job_id, url)
-
-    # Ensure site is tracked for monitoring
     await d1.upsert_site(url)
 
     return {"job_id": job_id, "message": "Scrape started"}
@@ -136,11 +132,6 @@ async def _run_scrape(job_id: str, url: str):
 
 @router.get("/scrape/status/{job_id}")
 async def scrape_status(job_id: str):
-    # Check in-memory first
-    if job_id in _active_scrapes:
-        job = dict(_active_scrapes[job_id])
-
-    # Check MongoDB for detailed progress
     temp_col = await mongo.col_temp()
     doc = await temp_col.find_one({"job_id": job_id})
     if doc:
@@ -158,6 +149,24 @@ async def scrape_status(job_id: str):
 @router.get("/scrape/active")
 async def active_scrapes():
     return list(_active_scrapes.values())
+
+
+# ── Site Settings (custom scrape pattern per site) ────────────────────────────
+
+@router.get("/scrape/settings")
+async def get_scrape_settings(url: str = Query(...)):
+    """Get per-site custom scrape settings."""
+    return await mongo.get_site_settings(url)
+
+
+@router.post("/scrape/settings")
+async def save_scrape_settings(data: dict):
+    """Save per-site custom scrape settings."""
+    site_url = data.get("site_url", "").strip()
+    if not site_url:
+        raise HTTPException(400, "site_url required")
+    saved = await mongo.save_site_settings(site_url, data)
+    return {"ok": True, "settings": saved}
 
 
 # ── Site Monitoring ───────────────────────────────────────────────────────────
@@ -203,7 +212,6 @@ async def scan_history(limit: int = Query(50, ge=1, le=500)):
 
 @router.delete("/monitor/sites")
 async def remove_site(data: dict):
-    """Remove a site from monitoring."""
     url = data.get("url", "").strip()
     if not url:
         raise HTTPException(400, "URL required")
@@ -215,10 +223,6 @@ async def remove_site(data: dict):
 
 @router.delete("/videos/{vid}/thumbnail")
 async def delete_video_thumbnail(vid: int, which: str = Query("original")):
-    """
-    Delete a thumbnail from R2 and clear the DB field.
-    which = 'original' | 'thumbnail_2'
-    """
     row = await d1.get_video(vid)
     if not row:
         raise HTTPException(404, "Video not found")
@@ -238,14 +242,11 @@ from fastapi import Request as FastAPIRequest
 @router.post("/track/visit")
 async def track_visit(request: FastAPIRequest):
     ip = request.client.host if request.client else "unknown"
-    await d1.d1_query(
-        "INSERT INTO visitors (ip) VALUES (?)",
-        [ip],
-    )
+    await d1.d1_query("INSERT INTO visitors (ip) VALUES (?)", [ip])
     return {"ok": True}
 
 
-# ── Slug uniqueness check ─────────────────────────────────────────────────────
+# ── Slug utils ────────────────────────────────────────────────────────────────
 
 @router.get("/videos/check-slug")
 async def check_slug(slug: str = Query(...)):
@@ -253,8 +254,6 @@ async def check_slug(slug: str = Query(...)):
     exists = bool(r.get("results"))
     return {"slug": slug, "available": not exists}
 
-
-# ── Generate a fresh slug ─────────────────────────────────────────────────────
 
 @router.get("/utils/slug")
 async def new_slug(title: str = Query("")):

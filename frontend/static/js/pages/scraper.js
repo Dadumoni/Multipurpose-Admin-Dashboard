@@ -2,9 +2,12 @@ const ScraperPage = (() => {
 
   let pollTimer    = null;
   let currentJobId = null;
-  let jobHistory   = [];    // in-session history
+  let jobHistory   = [];
 
-  // ── UI state ─────────────────────────────────────────────────────
+  // Current URL being tracked for settings load/save
+  let _settingsUrl = '';
+
+  // ── UI helpers ────────────────────────────────────────────────────
 
   function setRunning(running) {
     const urlInput = document.getElementById('scrapeUrl');
@@ -75,13 +78,98 @@ const ScraperPage = (() => {
     `).join('');
   }
 
+  // ── Site Settings panel ───────────────────────────────────────────
+
+  /**
+   * Load settings for the given URL and update the toggle + fields.
+   * Called when URL input loses focus or on page init.
+   */
+  async function loadSettings(url) {
+    if (!url) return;
+    _settingsUrl = url;
+    try {
+      const cfg = await API.getScrapeSettings(url);
+      applySettings(cfg);
+    } catch (e) {
+      // No settings yet — keep defaults (toggle off)
+    }
+  }
+
+  function applySettings(cfg) {
+    const toggle      = document.getElementById('customModeToggle');
+    const panel       = document.getElementById('customSettingsPanel');
+    const videoInput  = document.getElementById('videoPatternInput');
+    const posterCheck = document.getElementById('posterKeepDefault');
+    const posterInput = document.getElementById('posterPatternInput');
+    const posterRow   = document.getElementById('posterPatternRow');
+
+    const isCustom = !!cfg.custom_mode;
+    toggle.checked = isCustom;
+    panel.style.display = isCustom ? '' : 'none';
+
+    videoInput.value  = cfg.video_pattern      || '';
+    posterCheck.checked = cfg.poster_keep_default !== false; // default true
+    posterInput.value = cfg.poster_pattern     || '';
+    posterRow.style.display = posterCheck.checked ? 'none' : '';
+  }
+
+  async function saveSettings() {
+    const url = document.getElementById('scrapeUrl').value.trim();
+    if (!url) { showToast('Enter a URL first', 'error'); return; }
+
+    const cfg = readSettingsFromUI(url);
+    try {
+      await API.saveScrapeSettings(cfg);
+      showToast('Settings saved ✓', 'success');
+    } catch (e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+  }
+
+  function readSettingsFromUI(url) {
+    return {
+      site_url:           url,
+      custom_mode:        document.getElementById('customModeToggle').checked,
+      video_pattern:      document.getElementById('videoPatternInput').value.trim(),
+      poster_keep_default: document.getElementById('posterKeepDefault').checked,
+      poster_pattern:     document.getElementById('posterPatternInput').value.trim(),
+    };
+  }
+
+  function bindSettingsUI() {
+    const toggle      = document.getElementById('customModeToggle');
+    const panel       = document.getElementById('customSettingsPanel');
+    const posterCheck = document.getElementById('posterKeepDefault');
+    const posterRow   = document.getElementById('posterPatternRow');
+    const saveBtn     = document.getElementById('saveSettingsBtn');
+    const urlInput    = document.getElementById('scrapeUrl');
+
+    // Toggle shows/hides the custom settings panel
+    toggle.addEventListener('change', () => {
+      panel.style.display = toggle.checked ? '' : 'none';
+    });
+
+    // Poster keep-default checkbox shows/hides poster URL input
+    posterCheck.addEventListener('change', () => {
+      posterInput.style.display = posterCheck.checked ? 'none' : '';
+    });
+
+    // Load settings when URL input loses focus
+    urlInput.addEventListener('blur', () => {
+      const url = urlInput.value.trim();
+      if (url) loadSettings(url);
+    });
+
+    // Save button
+    saveBtn.addEventListener('click', saveSettings);
+  }
+
   // ── Polling ──────────────────────────────────────────────────────
 
   function startPolling(jobId, url) {
     stopPolling();
     currentJobId = jobId;
 
-    // Add to history
     const jobEntry = { jobId, url, status: 'running', scraped: 0, startedAt: Date.now() };
     jobHistory.push(jobEntry);
     renderJobHistory();
@@ -91,7 +179,6 @@ const ScraperPage = (() => {
         const job = await API.scrapeStatus(jobId);
         updateProgress(job);
 
-        // Sync history entry
         jobEntry.status  = job.status;
         jobEntry.scraped = job.scraped;
         renderJobHistory();
@@ -102,7 +189,6 @@ const ScraperPage = (() => {
           OverviewPage.loadStats();
         }
       } catch (e) {
-        // Network hiccup — keep polling
         console.warn('Poll error:', e.message);
       }
     }, 2000);
@@ -118,10 +204,19 @@ const ScraperPage = (() => {
     const url = document.getElementById('scrapeUrl').value.trim();
     if (!url) { showToast('Enter a URL first', 'error'); return; }
 
-    // Basic URL validation
     try { new URL(url); } catch {
       showToast('Invalid URL — include https://', 'error');
       return;
+    }
+
+    // Auto-save settings before starting (so crawl picks them up)
+    if (document.getElementById('customModeToggle').checked) {
+      try {
+        await API.saveScrapeSettings(readSettingsFromUI(url));
+      } catch (e) {
+        showToast('Could not save settings: ' + e.message, 'error');
+        return;
+      }
     }
 
     try {
@@ -143,6 +238,7 @@ const ScraperPage = (() => {
     document.getElementById('scrapeUrl').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) startScrape();
     });
+    bindSettingsUI();
     renderJobHistory();
   }
 

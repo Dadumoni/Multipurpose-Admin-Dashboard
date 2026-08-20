@@ -147,6 +147,58 @@
           <input class="input url-input" id="scrapeUrl" placeholder="https://example.blogspot.com" type="url" />
           <button class="btn btn-primary" id="scrapeBtn">⬡ Scrap</button>
         </div>
+
+        <!-- Custom pattern toggle row -->
+        <div class="scraper-custom-row">
+          <div class="scraper-custom-toggle-wrap">
+            <label class="toggle-label" for="customModeToggle">
+              <span class="toggle-switch">
+                <input type="checkbox" id="customModeToggle" />
+                <span class="toggle-slider"></span>
+              </span>
+              <span class="toggle-text">Custom Link Pattern</span>
+            </label>
+            <span class="info-badge" style="margin-left:auto">per-site settings</span>
+          </div>
+
+          <!-- Custom settings panel (hidden by default) -->
+          <div id="customSettingsPanel" style="display:none">
+            <div class="custom-field-group">
+              <label class="custom-field-label">
+                Video Link — example URL
+                <span class="custom-field-hint">Paste one example video URL from this site. The scraper will find all similar URLs.</span>
+              </label>
+              <input class="input" id="videoPatternInput" type="url"
+                     placeholder="https://zerostorage.net/api/files/download/a2e9b243-…?track=true" />
+            </div>
+
+            <div class="custom-field-group" id="posterPatternRow" style="">
+              <label class="custom-field-label">
+                <span style="display:flex;align-items:center;gap:10px">
+                  Poster / Thumbnail — example URL
+                  <label class="checkbox-inline">
+                    <input type="checkbox" id="posterKeepDefault" checked />
+                    <span>Keep default</span>
+                  </label>
+                </span>
+                <span class="custom-field-hint">Leave "Keep default" checked to use the site's og:image as usual.</span>
+              </label>
+              <input class="input" id="posterPatternInput" type="url"
+                     placeholder="https://cdn.example.com/thumbs/abc123.jpg"
+                     style="display:none" />
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn-secondary" id="saveSettingsBtn" style="font-size:13px;padding:6px 16px">
+                💾 Save Settings
+              </button>
+              <span class="muted" style="font-size:12px;align-self:center">
+                Settings are saved per site and used during monitoring too.
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div class="scraper-info">
           <span class="info-badge">10s delay between posts</span>
           <span class="info-badge">MP4 + Blogger links extracted</span>

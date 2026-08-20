@@ -1,6 +1,5 @@
 /**
  * Thin API wrapper — centralises all fetch calls.
- * All methods return parsed JSON or throw on error.
  */
 const API = (() => {
   const BASE = '/api';
@@ -23,7 +22,7 @@ const API = (() => {
 
   return {
     // ── Overview ──────────────────────────────────────────────────
-    getStats: () => req('GET', '/stats'),
+    getStats:       () => req('GET', '/stats'),
     getScanHistory: (limit = 20) => req('GET', `/monitor/history?limit=${limit}`),
 
     // ── Videos ────────────────────────────────────────────────────
@@ -31,30 +30,34 @@ const API = (() => {
       const q = new URLSearchParams({ page, per_page: perPage, search, type });
       return req('GET', `/videos?${q}`);
     },
-    getVideo: (id) => req('GET', `/videos/${id}`),
-    updateVideo: (id, data) => req('PATCH', `/videos/${id}`, data),
-    deleteVideo: (id) => req('DELETE', `/videos/${id}`),
-    bulkDelete: (ids) => req('POST', '/videos/bulk-delete', { ids }),
-    uploadThumbnail: (id, formData) => req('POST', `/videos/${id}/thumbnail`, formData, true),
+    getVideo:        (id)       => req('GET',    `/videos/${id}`),
+    updateVideo:     (id, data) => req('PATCH',  `/videos/${id}`, data),
+    deleteVideo:     (id)       => req('DELETE', `/videos/${id}`),
+    bulkDelete:      (ids)      => req('POST',   '/videos/bulk-delete', { ids }),
+    uploadThumbnail: (id, fd)   => req('POST',   `/videos/${id}/thumbnail`, fd, true),
 
     // ── Scraper ───────────────────────────────────────────────────
-    startScrape: (url) => req('POST', '/scrape/start', { url }),
-    scrapeStatus: (jobId) => req('GET', `/scrape/status/${jobId}`),
-    activeScrapes: () => req('GET', '/scrape/active'),
+    startScrape:  (url)    => req('POST', '/scrape/start', { url }),
+    scrapeStatus: (jobId)  => req('GET',  `/scrape/status/${jobId}`),
+    activeScrapes:()       => req('GET',  '/scrape/active'),
+
+    // ── Site settings ─────────────────────────────────────────────
+    getScrapeSettings:  (url)  => req('GET',  `/scrape/settings?url=${encodeURIComponent(url)}`),
+    saveScrapeSettings: (data) => req('POST', '/scrape/settings', data),
 
     // ── Monitor ───────────────────────────────────────────────────
-    listSites: () => req('GET', '/monitor/sites'),
-    scanNow: (url) => req('POST', '/monitor/scan-now', { url }),
+    listSites:   ()      => req('GET',    '/monitor/sites'),
+    scanNow:     (url)   => req('POST',   '/monitor/scan-now', { url }),
     scanHistory: (limit = 50) => req('GET', `/monitor/history?limit=${limit}`),
-    removeSite: (url) => req('DELETE', '/monitor/sites', { url }),
+    removeSite:  (url)   => req('DELETE', '/monitor/sites', { url }),
 
     // ── Thumbnail ─────────────────────────────────────────────────
     deleteThumbnail: (id, which = 'original') =>
       req('DELETE', `/videos/${id}/thumbnail?which=${which}`),
 
     // ── Utils ─────────────────────────────────────────────────────
-    newSlug: (title = '') => req('GET', `/utils/slug?title=${encodeURIComponent(title)}`),
-    checkSlug: (slug) => req('GET', `/videos/check-slug?slug=${encodeURIComponent(slug)}`),
+    newSlug:   (title = '') => req('GET', `/utils/slug?title=${encodeURIComponent(title)}`),
+    checkSlug: (slug)       => req('GET', `/videos/check-slug?slug=${encodeURIComponent(slug)}`),
 
     // ── Tracking ──────────────────────────────────────────────────
     trackVisit: () => req('POST', '/track/visit').catch(() => {}),
