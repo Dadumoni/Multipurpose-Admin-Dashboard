@@ -52,8 +52,11 @@ WORKDIR /app
 # Builder se pre-compiled wheels copy karo aur install karo
 COPY --from=builder /wheels /wheels
 COPY requirements.txt .
-RUN pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt \
- && rm -rf /wheels requirements.txt
+# FIX 2: rm -rf /wheels hata diya — Koyeb ka build filesystem
+# bind-mounted directories ko remove karne nahi deta (I/O error).
+# Multi-stage build me /wheels agle stage me copy nahi hoti,
+# isliye image size pe koi fark nahi padta.
+RUN pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt
 
 # Application code copy karo (non-root ownership)
 COPY --chown=appuser:appgroup . .
