@@ -21,11 +21,7 @@ from backend.database import d1, mongo
 from backend.storage.r2 import upload_thumbnail
 from backend.utils.slug import generate_slug
 from config.settings import settings
-
-# Domain-specific scrapers
-from backend.scraper.scraper_functions.assamese_scraper import (
-    scrape_post_playwright as _assamese_scrape,
-)
+from backend.scraper.scraper_functions.assamesesexvideos import scrape_post_assamesesexvideos
 
 logger = logging.getLogger(__name__)
 
@@ -328,11 +324,9 @@ async def scrape_post(url: str, client: httpx.AsyncClient, site_cfg: dict | None
 
     # ── Video links ──────────────────────────────────────────────────────────
     if "assamesesexvideos.com" in domain:
-        # Playwright-based scraper: page JS execute karo + zerostorage network intercept
-        # Direct HTML me URLs nahi milte — video.js runtime me load karta hai
-        logger.info(f"assamesesexvideos.com detected → using Playwright scraper")
-        video_links = await _assamese_scrape(url)
-        logger.info(f"assamese playwright scraper: found {len(video_links)} links")
+        # This site embeds zerostorage.net download URLs directly in post HTML
+        video_links = extract_video_links_zerostorage(html)
+        logger.info(f"assamesesexvideos extractor: found {len(video_links)} links")
     elif custom_mode and cfg.get("video_pattern"):
         compiled = _build_custom_pattern(cfg["video_pattern"])
         video_links = extract_video_links_custom(html, compiled) if compiled else extract_video_links_default(html, url)
@@ -620,7 +614,12 @@ async def crawl_site(
     Full site crawl. Publishes progress updates to MongoDB crawler_temp.
     Loads per-site settings from MongoDB site_settings.
     Supports pause (pause_event) and cancel (cancel_flags[job_id]).
+    Domain-specific scrapers are dispatched automatically.
     """
+    from urllib.parse import urlparse as _urlparse
+    domain = _urlparse(site_url).netloc.lower().lstrip("www.")
+    is_assamesesex = "assamesesexvideos.com" in domain
+
     # Load per-site custom settings
     site_cfg = await mongo.get_site_settings(site_url)
     logger.info(f"Site config for {site_url}: custom_mode={site_cfg.get('custom_mode')}")
@@ -642,45 +641,133 @@ async def crawl_site(
     first_post_url = post_urls[0] if post_urls else None
     cancelled = False
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        for i, post_url in enumerate(post_urls):
-            # ── Check cancel ────────────────────────────────────────────
-            if cancel_flags and job_id and cancel_flags.get(job_id):
-                logger.info(f"Crawl cancelled: {site_url} after {i} posts")
-                cancelled = True
-                break
+    # ── assamesesexvideos.com — Playwright-based crawl ────────────────────────
+    if is_assamesesex:
+        from playwright.async_api import async_playwright as _playwright
+        from backend.scraper.scraper_functions.assamesesexvideos import (
+            scrape_post_assamesesexvideos as _scrape_assamese,
+        )
+        logger.info("Using Playwright-based scraper for assamesesexvideos.com")
 
-            # ── Wait if paused ──────────────────────────────────────────
-            if pause_event:
-                await pause_event.wait()
-
-            # ── Check cancel again after unpausing ──────────────────────
-            if cancel_flags and job_id and cancel_flags.get(job_id):
-                cancelled = True
-                break
-
-            status_str = "running"
-            await temp_col.update_one(
-                {"job_id": job_id},
-                {"$set": {
-                    "current_url": post_url,
-                    "progress": i + 1,
-                    "total": total,
-                    "scraped": scraped,
-                    "errors": errors,
-                    "status": status_str,
-                }},
-                upsert=True,
+        async with _playwright() as pw:
+            browser = await pw.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox",
+                      "--disable-blink-features=AutomationControlled"],
+            )
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+                viewport={"width": 1280, "height": 800},
+            )
+            await context.route(
+                "**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,eot}",
+                lambda route: route.abort()
             )
 
-            results = await scrape_post(post_url, client, site_cfg)
-            if results:
-                scraped += len(results)
-            else:
-                errors += 1
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    for i, post_url in enumerate(post_urls):
+                        # ── Cancel check ─────────────────────────────────
+                        if cancel_flags and job_id and cancel_flags.get(job_id):
+                            logger.info(f"Crawl cancelled: {site_url} after {i} posts")
+                            cancelled = True
+                            break
 
-            if i < total - 1:
-                await asyncio.sleep(settings.SCRAPE_DELAY)
+                        # ── Pause check ──────────────────────────────────
+                        if pause_event:
+                            await pause_event.wait()
+                        if cancel_flags and job_id and cancel_flags.get(job_id):
+                            cancelled = True
+                            break
+
+                        await temp_col.update_one(
+                            {"job_id": job_id},
+                            {"$set": {
+                                "current_url": post_url,
+                                "progress": i + 1,
+                                "total": total,
+                                "scraped": scraped,
+                                "errors": errors,
+                                "status": "running",
+                            }},
+                            upsert=True,
+                        )
+
+                        # Fetch title cheaply (httpx, no JS needed for title)
+                        title = ""
+                        try:
+                            r = await client.get(post_url, follow_redirects=True, timeout=15)
+                            from bs4 import BeautifulSoup as _BS
+                            _soup = _BS(r.text, "lxml")
+                            _og = _soup.find("meta", property="og:title")
+                            title = (
+                                _og["content"].strip() if _og and _og.get("content")
+                                else (_soup.find("h1").get_text(strip=True) if _soup.find("h1") else "")
+                            )
+                        except Exception:
+                            pass
+
+                        results = await _scrape_assamese(
+                            post_url=post_url,
+                            title=title,
+                            playwright_context=context,
+                        )
+                        if results:
+                            scraped += len(results)
+                        else:
+                            errors += 1
+
+                        if i < total - 1:
+                            await asyncio.sleep(settings.SCRAPE_DELAY)
+            finally:
+                await browser.close()
+
+    # ── Default httpx-based crawl (all other domains) ─────────────────────────
+    else:
+        async with httpx.AsyncClient(timeout=30) as client:
+            for i, post_url in enumerate(post_urls):
+                # ── Check cancel ────────────────────────────────────────────
+                if cancel_flags and job_id and cancel_flags.get(job_id):
+                    logger.info(f"Crawl cancelled: {site_url} after {i} posts")
+                    cancelled = True
+                    break
+
+                # ── Wait if paused ──────────────────────────────────────────
+                if pause_event:
+                    await pause_event.wait()
+
+                # ── Check cancel again after unpausing ──────────────────────
+                if cancel_flags and job_id and cancel_flags.get(job_id):
+                    cancelled = True
+                    break
+
+                status_str = "running"
+                await temp_col.update_one(
+                    {"job_id": job_id},
+                    {"$set": {
+                        "current_url": post_url,
+                        "progress": i + 1,
+                        "total": total,
+                        "scraped": scraped,
+                        "errors": errors,
+                        "status": status_str,
+                    }},
+                    upsert=True,
+                )
+
+                results = await scrape_post(post_url, client, site_cfg)
+                if results:
+                    scraped += len(results)
+                else:
+                    errors += 1
+
+                if i < total - 1:
+                    await asyncio.sleep(settings.SCRAPE_DELAY)
 
     await d1.update_site_scan(site_url, first_post_url)
     await d1.upsert_site(site_url)
