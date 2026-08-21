@@ -310,12 +310,29 @@ async def _get_context() -> "BrowserContext":
         if _shared_context is None:
             logger.info("[playwright] Launching Chromium browser...")
             _playwright_instance = await async_playwright().start()
+            import os, shutil
+
+            # Alpine me system chromium use karo
+            # PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH env var set hai (Dockerfile me)
+            # Fallback: shutil se dhundho
+            chromium_path = (
+                os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+                or shutil.which("chromium")
+                or shutil.which("chromium-browser")
+                or "/usr/bin/chromium"
+            )
+            logger.info(f"[playwright] Using chromium: {chromium_path}")
+
             browser = await _playwright_instance.chromium.launch(
                 headless=True,
+                executable_path=chromium_path,
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                    "--no-zygote",
                     "--disable-blink-features=AutomationControlled",
                 ],
             )

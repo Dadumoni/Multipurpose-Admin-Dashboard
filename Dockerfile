@@ -64,6 +64,10 @@ COPY requirements.txt .
 # Multi-stage build me /wheels final image me copy nahi hoti, size pe fark nahi.
 RUN pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt
 
+# Playwright: Alpine (musl) pe PyPI wheel nahi hota — pip se directly install karo
+# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 kyunki hum system chromium use karenge
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install --no-cache-dir playwright
+
 # Application code copy karo (non-root ownership)
 COPY --chown=appuser:appgroup . .
 
@@ -80,8 +84,9 @@ ENV HOST=0.0.0.0 \
     TZ=Asia/Kolkata
 
 # Playwright ko system Chromium use karwao (apna download na kare)
-ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Alpine me chromium binary /usr/bin/chromium pe hota hai
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # ── Port expose ───────────────────────────────────────────────────────────────
 EXPOSE 8000
