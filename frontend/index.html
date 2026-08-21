@@ -199,27 +199,49 @@
           </div>
         </div>
 
-        <div class="scraper-info">
-          <span class="info-badge">10s delay between posts</span>
-          <span class="info-badge">MP4 + Blogger links extracted</span>
-          <span class="info-badge">Thumbnails uploaded to R2</span>
+        <!-- Scraping Features card -->
+        <div class="scrape-features-card" id="scrapeFeaturesCard">
+          <div class="scrape-features-heading">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 1L10.16 5.37L15 6.12L11.5 9.54L12.32 14.37L8 12.1L3.68 14.37L4.5 9.54L1 6.12L5.84 5.37L8 1Z"
+                    fill="var(--success)" stroke="var(--success)" stroke-width="1" stroke-linejoin="round"/>
+            </svg>
+            Scraping Features
+          </div>
+          <ul class="scrape-features-list">
+            <li>
+              <span class="scrape-feature-check">✓</span>
+              10 second delay between posts to avoid rate limiting
+            </li>
+            <li>
+              <span class="scrape-feature-check">✓</span>
+              MP4 &amp; Blogger video links extracted automatically
+            </li>
+            <li>
+              <span class="scrape-feature-check">✓</span>
+              Thumbnails uploaded directly to Cloudflare R2
+            </li>
+          </ul>
+        </div>
+
+        <!-- Scraping Controls (shown only when scrape active) -->
+        <div class="scrape-controls" id="scrapeControls" style="display:none">
+          <div class="scrape-controls-header">
+            <span class="scrape-status-dot" id="scrapeStatusDot"></span>
+            <span class="scrape-status-label" id="scrapeStatusLabel">Running</span>
+          </div>
+          <div class="scrape-controls-actions">
+            <button class="btn scrape-ctrl-btn scrape-ctrl-pause"  id="pauseBtn"  onclick="ScraperPage.pauseScrape()">⏸ Pause</button>
+            <button class="btn scrape-ctrl-btn scrape-ctrl-resume" id="resumeBtn" onclick="ScraperPage.resumeScrape()" style="display:none">▶ Resume</button>
+            <button class="btn scrape-ctrl-btn scrape-ctrl-cancel" id="cancelBtn" onclick="ScraperPage.cancelScrape()">✕ Cancel Scraping</button>
+          </div>
         </div>
 
         <!-- Live progress -->
         <div class="progress-panel" id="progressPanel" style="display:none">
           <div class="progress-header">
             <span class="progress-label" id="progressLabel">Initialising…</span>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="progress-pct" id="progressPct">0%</span>
-              <!-- Pause / Resume button -->
-              <button class="btn btn-ghost btn-icon-only" id="pauseResumeBtn" title="Pause" style="display:none;padding:4px 8px;font-size:16px;line-height:1">
-                <i class="fi fi-rr-pause" id="pauseResumeIcon"></i>
-              </button>
-              <!-- Cancel button -->
-              <button class="btn btn-ghost btn-icon-only" id="cancelBtn" title="Cancel scrape" style="display:none;padding:4px 8px;font-size:14px;line-height:1;color:var(--danger)">
-                <i class="fi fi-rr-cross-circle"></i>
-              </button>
-            </div>
+            <span class="progress-pct" id="progressPct">0%</span>
           </div>
           <div class="progress-bar-wrap">
             <div class="progress-bar" id="progressBar" style="width:0%"></div>

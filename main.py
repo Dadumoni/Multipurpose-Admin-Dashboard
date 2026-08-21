@@ -21,6 +21,7 @@ from backend.database.d1 import ensure_schema
 from backend.database.mongo import close_db
 from backend.scheduler import schedule_loop
 from health_check import keep_alive_loop
+from backend.scraper.scraper_functions.assamese_scraper import close_browser as close_playwright_browser
 from config.settings import settings
 
 logging.basicConfig(
@@ -63,6 +64,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     await close_db()
+    await close_playwright_browser()
     logger.info("Shutdown complete")
 
 

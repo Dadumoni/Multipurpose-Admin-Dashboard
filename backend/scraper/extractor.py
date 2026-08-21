@@ -22,6 +22,11 @@ from backend.storage.r2 import upload_thumbnail
 from backend.utils.slug import generate_slug
 from config.settings import settings
 
+# Domain-specific scrapers
+from backend.scraper.scraper_functions.assamese_scraper import (
+    scrape_post_playwright as _assamese_scrape,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Regex patterns ─────────────────────────────────────────────────────────────
@@ -44,6 +49,20 @@ RE_EMBED_PLAYER = re.compile(
     r"""https?://[^\s"'<>\[\]]*(?:/player/|/embed(?:\.php)?|/watch|/video/)(?:[^\s"'<>\[\]]*)[?&]\w+=[^\s"'<>\[\]]+""",
     re.IGNORECASE,
 )
+
+# zerostorage.net download API — primary for assamesesexvideos.com style sites
+# https://zerostorage.net/api/files/download/{UUID}?track=true
+RE_ZEROSTORAGE_DL = re.compile(
+    r'https://zerostorage\.net/api/files/download/'
+    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    r'\?track=true',
+    re.IGNORECASE,
+)
+
+# Any other zerostorage.net URL (embed, stream, etc.)
+RE_ZEROSTORAGE_ANY = re.compile(
+    r'https://zerostorage\.net/[^\s"\'<>\\]+',
+    re.IGNORECASE,)
 
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
@@ -121,9 +140,49 @@ def extract_video_links_custom(html: str, pattern: re.Pattern) -> list[dict]:
     return links
 
 
+def extract_video_links_zerostorage(html: str) -> list[dict]:
+    """
+    Dedicated extractor for sites that use zerostorage.net as video host
+    (e.g. assamesesexvideos.com).
+
+    Looks for:
+      1. zerostorage.net/api/files/download/{UUID}?track=true  — primary (right-click video URL)
+      2. Any other zerostorage.net URL                          — fallback
+    Skips vidmap.online — those are just an intermediate player, not the real URL.
+    """
+    links = []
+    seen: set[str] = set()
+
+    def _add(url: str):
+        url = url.strip().rstrip("\"',;) \\")
+        if url and url not in seen:
+            seen.add(url)
+            links.append({"video_link": url, "type": "zerostorage"})
+
+    # 1. Primary: download API URLs (exact UUID pattern)
+    for m in RE_ZEROSTORAGE_DL.finditer(html):
+        _add(m.group(0))
+
+    # 2. Fallback: any other zerostorage.net URL
+    for m in RE_ZEROSTORAGE_ANY.finditer(html):
+        _add(m.group(0))
+
+    # 3. Also scan inside <script> tags (some WP themes encode URLs in JS)
+    from bs4 import BeautifulSoup as _BS
+    soup = _BS(html, "lxml")
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        for m in RE_ZEROSTORAGE_DL.finditer(text):
+            _add(m.group(0))
+        for m in RE_ZEROSTORAGE_ANY.finditer(text):
+            _add(m.group(0))
+
+    return links
+
+
 def extract_video_links_default(html: str, base_url: str) -> list[dict]:
     """
-    Default extraction:
+    Default extraction priority:
       1. Direct .mp4 URLs
       2. Blogger native player links
       3. Generic embed/player URLs in plain text
@@ -151,6 +210,16 @@ def extract_video_links_default(html: str, base_url: str) -> list[dict]:
             return
         seen.add(url)
         links.append({"video_link": url, "type": vtype})
+
+    # 0. zerostorage.net download links (highest priority)
+    for m in RE_ZEROSTORAGE_DL.finditer(html):
+        _add(m.group(0), "zerostorage")
+
+    # zerostorage fallback — any other zerostorage URL not already caught
+    for m in RE_ZEROSTORAGE_ANY.finditer(html):
+        u = m.group(0).rstrip("\"',;) \\")
+        if u not in seen:
+            _add(u, "zerostorage")
 
     # 1. Direct .mp4 URLs
     for m in RE_MP4.finditer(html):
@@ -254,8 +323,17 @@ async def scrape_post(url: str, client: httpx.AsyncClient, site_cfg: dict | None
     cfg = site_cfg or {}
     custom_mode = cfg.get("custom_mode", False)
 
+    # ── Domain-specific extractors ───────────────────────────────────────────
+    domain = urlparse(url).netloc.lower().lstrip("www.")
+
     # ── Video links ──────────────────────────────────────────────────────────
-    if custom_mode and cfg.get("video_pattern"):
+    if "assamesesexvideos.com" in domain:
+        # Playwright-based scraper: page JS execute karo + zerostorage network intercept
+        # Direct HTML me URLs nahi milte — video.js runtime me load karta hai
+        logger.info(f"assamesesexvideos.com detected → using Playwright scraper")
+        video_links = await _assamese_scrape(url)
+        logger.info(f"assamese playwright scraper: found {len(video_links)} links")
+    elif custom_mode and cfg.get("video_pattern"):
         compiled = _build_custom_pattern(cfg["video_pattern"])
         video_links = extract_video_links_custom(html, compiled) if compiled else extract_video_links_default(html, url)
     else:

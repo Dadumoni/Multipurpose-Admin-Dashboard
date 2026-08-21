@@ -34,14 +34,20 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 # ── Stage 2: Production image ─────────────────────────────────────────────────
 FROM python:3.11-alpine
 
-# Sirf runtime libraries — build tools nahi (image choti rahegi)
-# curl: health check ke liye
-# libxml2 + libxslt: lxml runtime ke liye
+# Runtime libraries
+# curl: health check | libxml2+libxslt: lxml | chromium: Playwright scraper
 RUN apk add --no-cache \
         libxml2 \
         libxslt \
         curl \
-        tzdata
+        tzdata \
+        chromium \
+        nss \
+        freetype \
+        harfbuzz \
+        ca-certificates \
+        ttf-freefont \
+        font-noto-emoji
 
 # Non-root user banao
 RUN addgroup -g 1001 appgroup \
@@ -73,13 +79,17 @@ ENV HOST=0.0.0.0 \
     PYTHONPATH=/app \
     TZ=Asia/Kolkata
 
+# Playwright ko system Chromium use karwao (apna download na kare)
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # ── Port expose ───────────────────────────────────────────────────────────────
 EXPOSE 8000
 
 # ── Docker HEALTHCHECK ────────────────────────────────────────────────────────
 # Koyeb aur Docker dono is instruction ko use karte hain
 # start-period=45s: Alpine + Python startup ko thoda zyada time
-HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # ── Start command ─────────────────────────────────────────────────────────────
