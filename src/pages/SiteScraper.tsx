@@ -12,9 +12,10 @@ import {
   Layers,
   ArrowUpRight,
   ShieldCheck,
-  Pause
+  Pause,
+  ArrowRight
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -34,6 +35,7 @@ interface ScraperSiteInfo {
 }
 
 export default function SiteScraper() {
+  const navigate = useNavigate();
   const [sites, setSites] = useState<ScraperSiteInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
@@ -166,16 +168,20 @@ export default function SiteScraper() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
+        <div 
+          onClick={() => navigate('/scraped#my-files-card')}
+          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-4 shadow-xs cursor-pointer transition-all hover:shadow-sm group"
+          title="Click to view all scraped videos in My Files"
+        >
           <div className="flex items-center justify-between text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
             <span>Total Posts Scraped</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            <CheckCircle2 className="h-4 w-4 text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono text-black dark:text-white">
+          <div className="mt-2 text-2xl font-bold font-mono text-black dark:text-white group-hover:underline">
             {totalScrapedAll.toLocaleString()}
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            Saved to MongoDB collection <code>posts</code>
+            Click to view all in <strong>My Files</strong>
           </div>
         </div>
 
@@ -288,18 +294,24 @@ export default function SiteScraper() {
 
                     {/* Right side: Button-sized Scraped/Failed Box & Action Buttons */}
                     <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                      {/* Scraped & Failed pill - exact button size (h-8) */}
-                      <div className="h-8 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 flex items-center gap-2 text-xs font-mono shrink-0">
-                        <span className="text-zinc-400 text-[11px]">Scraped:</span>
-                        <span className="font-bold text-black dark:text-white">
+                      {/* Scraped & Failed pill - clickable to view & filter in My Files */}
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/scraped?domain=${encodeURIComponent(site.domain)}#my-files-card`)}
+                        className="h-8 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 flex items-center gap-1.5 text-xs font-mono shrink-0 cursor-pointer transition-all active:scale-95 group"
+                        title={`Click to view all ${site.domain} videos in My Files`}
+                      >
+                        <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Scraped:</span>
+                        <span className="font-bold text-black dark:text-white group-hover:underline">
                           {(site.total_scraped || 0).toLocaleString()}
                         </span>
                         <span className="text-zinc-300 dark:text-zinc-700">|</span>
-                        <span className="text-zinc-400 text-[11px]">Failed:</span>
+                        <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Failed:</span>
                         <span className={`font-bold ${site.failed_count > 0 ? 'text-red-500' : 'text-zinc-400'}`}>
                           {(site.failed_count || 0).toLocaleString()}
                         </span>
-                      </div>
+                        <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-transform group-hover:translate-x-0.5" />
+                      </button>
 
                       {/* Stop or Restart Button */}
                       {isStopped ? (

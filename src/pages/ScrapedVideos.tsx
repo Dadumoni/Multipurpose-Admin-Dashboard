@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Search,
   Globe, 
@@ -336,7 +337,26 @@ export default function ScrapedVideos() {
   const [videos, setVideos] = useState<ScrapedVideo[]>(initialCachedVideos || []);
   const [loading, setLoading] = useState(!initialCachedVideos || initialCachedVideos.length === 0);
   const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [sourceFilter, setSourceFilter] = useState<string>(() => searchParams.get('domain') || 'all');
+
+  useEffect(() => {
+    const domainParam = searchParams.get('domain');
+    if (domainParam) {
+      setSourceFilter(domainParam);
+      setIsViewingExpired(false);
+      setIsViewingDuplicates(false);
+      setCurrentPage(1);
+
+      const timer = setTimeout(() => {
+        const el = document.getElementById('my-files-card');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams]);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -1292,7 +1312,12 @@ export default function ScrapedVideos() {
         postUrlStr.includes(lowerSearch);
 
       const effectiveDomain = video.domain || getDomain(video.video_url || video.post_url);
-      const matchesSource = sourceFilter === 'all' || effectiveDomain === sourceFilter;
+      const norm = (d?: string | null) => (d || '').toLowerCase().replace(/^www\./, '').trim();
+      const matchesSource =
+        sourceFilter === 'all' ||
+        effectiveDomain === sourceFilter ||
+        norm(effectiveDomain) === norm(sourceFilter) ||
+        norm(video.domain) === norm(sourceFilter);
 
       return matchesSearch && matchesSource;
     });
@@ -1710,7 +1735,7 @@ export default function ScrapedVideos() {
       </div>
 
       {/* FILE MANAGER AREA */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm transition-colors">
+      <div id="my-files-card" className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm transition-colors">
         {/* Toolbar */}
         <div className="h-14 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center justify-between bg-white dark:bg-black">
           <div className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
@@ -1719,8 +1744,14 @@ export default function ScrapedVideos() {
               onClick={() => {
                 setIsViewingExpired(false);
                 setIsViewingDuplicates(false);
+                setSourceFilter('all');
                 setCurrentPage(1);
                 setSelectedIds(new Set());
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev);
+                  next.delete('domain');
+                  return next;
+                });
               }}
               className="flex items-center gap-1.5 font-medium text-black dark:text-white hover:underline cursor-pointer"
             >
@@ -1793,6 +1824,32 @@ export default function ScrapedVideos() {
             ) : (
               <>
                 <span className="text-zinc-500 dark:text-zinc-400 font-medium">All Videos</span>
+                {sourceFilter !== 'all' && (
+                  <>
+                    <ChevronRight className="h-4 w-4 text-zinc-400 dark:text-zinc-600" />
+                    <span className="font-semibold text-sky-700 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-950/60 px-2 py-0.5 rounded text-xs inline-flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      <span>{sourceFilter}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSourceFilter('all');
+                        setCurrentPage(1);
+                        setSearchParams(prev => {
+                          const next = new URLSearchParams(prev);
+                          next.delete('domain');
+                          return next;
+                        });
+                        toast.info('Showing all domains');
+                      }}
+                      className="ml-1 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white underline cursor-pointer"
+                      title="Clear domain filter"
+                    >
+                      View All
+                    </button>
+                  </>
+                )}
                 <span className="text-xs text-zinc-400 dark:text-zinc-500 ml-1">({filteredVideos.length} posts)</span>
               </>
             )}
