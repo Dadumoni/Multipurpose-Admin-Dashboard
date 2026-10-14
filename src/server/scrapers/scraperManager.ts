@@ -4,6 +4,7 @@ import { viralchutScraperModule } from './viralchut.js';
 import { p4455ScraperModule } from './p4455.js';
 import { mydesi13ScraperModule } from './mydesi13.js';
 import { mmsvibexScraperModule } from './mmsvibex.js';
+import { mydesiRestScraperModule } from './mydesiRest.js';
 import { SiteScraperModule, ScraperSiteInfo } from './types.js';
 
 // Registry of all individual site scrapers (One file per site)
@@ -13,6 +14,7 @@ const scrapersRegistry: Map<string, SiteScraperModule> = new Map([
   [p4455ScraperModule.id, p4455ScraperModule],
   [mydesi13ScraperModule.id, mydesi13ScraperModule],
   [mmsvibexScraperModule.id, mmsvibexScraperModule],
+  [mydesiRestScraperModule.id, mydesiRestScraperModule],
 ]);
 
 const activeAbortControllers: Map<string, AbortController> = new Map();
