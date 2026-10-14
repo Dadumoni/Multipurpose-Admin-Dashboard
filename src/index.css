@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-heading: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --radius-xl: 0.75rem;
+  --radius-lg: 0.5rem;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --ring: #000000;
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --border: #27272a;
+  --input: #27272a;
+  --card: #000000;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --ring: #ffffff;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  html {
+    background-color: var(--background);
+    color: var(--foreground);
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+}
+
+/* Video Player - Fixed 16:9 container with object-fit: contain letterboxing/pillarboxing */
+.plyr-contain-player {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  position: relative;
+  background-color: #000;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plyr-contain-player .plyr {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  max-width: 100% !important;
+  background: #000 !important;
+  margin: auto !important;
+}
+
+.plyr-contain-player .plyr__video-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  background: #000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.plyr-contain-player .plyr__video-wrapper--fixed-ratio {
+  aspect-ratio: 16 / 9 !important;
+  padding-bottom: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.plyr-contain-player video,
+.plyr-contain-player .plyr video,
+.plyr-contain-player .plyr__video-wrapper video,
+.plyr-contain-player .plyr__video-wrapper--fixed-ratio video {
+  object-fit: contain !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  display: block !important;
+  margin: auto !important;
+  background-color: #000 !important;
+}
+
+.plyr-contain-player .plyr__poster {
+  background-size: contain !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-color: #000 !important;
+}
+
+/* Hide volume slider while keeping mute/unmute */
+.plyr-contain-player .plyr__volume--slider,
+.plyr-contain-player input[data-plyr='volume'] {
+  display: none !important;
+}
+
+/* Ensure Plyr settings & quality menu fits inside compact preview player */
+.plyr-contain-player .plyr__menu__container [role="menu"] {
+  max-height: 125px;
+  overflow-y: auto;
+}

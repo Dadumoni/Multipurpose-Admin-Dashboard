@@ -1,0 +1,6 @@
+{
+  "name": "VideoAdmin - Video Management Dashboard",
+  "description": "Production-ready admin dashboard for managing scraped and uploaded videos with Cloudflare R2 storage and Supabase database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
