@@ -194,29 +194,27 @@ export default function SiteScraper() {
       </div>
 
       {/* Main Scrapers List */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-850 pb-3">
-          <div>
-            <h2 className="text-base font-bold text-black dark:text-white flex items-center gap-2">
-              <Layers className="h-4.5 w-4.5" />
-              <span>Target Site Scrapers</span>
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Each website runs its dedicated parser module in <code>src/server/scrapers/</code>.
-            </p>
-          </div>
+      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="border-b border-zinc-100 dark:border-zinc-850 pb-2.5">
+          <h2 className="text-sm font-bold text-black dark:text-white flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            <span>Target Site Scrapers</span>
+          </h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            Each website runs its dedicated parser module in <code>src/server/scrapers/</code>.
+          </p>
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-xs text-zinc-400 animate-pulse">
+          <div className="py-8 text-center text-xs text-zinc-400 animate-pulse">
             Loading scraper modules...
           </div>
         ) : sites.length === 0 ? (
-          <div className="py-12 text-center text-xs text-zinc-400">
+          <div className="py-8 text-center text-xs text-zinc-400">
             No scrapers configured.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-2">
             {sites.map((site) => {
               const isRunning = site.status === 'running';
               const isStopped = !site.enabled || site.status === 'stopped';
@@ -225,20 +223,20 @@ export default function SiteScraper() {
               return (
                 <div
                   key={site.id}
-                  className={`rounded-xl border p-4 sm:p-5 transition-all ${
+                  className={`rounded-lg border px-3.5 py-2.5 transition-all ${
                     isRunning
-                      ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/10 dark:bg-emerald-950/10'
+                      ? 'border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-50/10 dark:bg-emerald-950/10'
                       : isStopped
-                      ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-950/40 opacity-80'
-                      : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black'
+                      ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-950/40 opacity-75'
+                      : 'border-zinc-200 dark:border-zinc-850 bg-white dark:bg-zinc-950/50 hover:border-zinc-300 dark:hover:border-zinc-800'
                   }`}
                 >
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     {/* Site Details */}
-                    <div className="space-y-1.5 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="text-base font-bold text-black dark:text-white flex items-center gap-1.5">
-                          <Globe className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400" />
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-black dark:text-white flex items-center gap-1.5">
+                          <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <span>{site.name}</span>
                         </span>
 
@@ -246,40 +244,40 @@ export default function SiteScraper() {
                           href={site.base_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs text-zinc-400 hover:text-black dark:hover:text-white inline-flex items-center gap-0.5 font-mono"
+                          className="text-[11px] text-zinc-400 hover:text-black dark:hover:text-white inline-flex items-center gap-0.5 font-mono"
                           title="Open target website"
                         >
                           <span>{site.domain}</span>
-                          <ExternalLink className="h-3 w-3" />
+                          <ExternalLink className="h-2.5 w-2.5" />
                         </a>
 
                         {/* Status Badge */}
                         {isRunning ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-flex items-center gap-1 animate-pulse">
-                            <RotateCw className="h-3 w-3 animate-spin" />
-                            <span>Running Scan</span>
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-flex items-center gap-1 animate-pulse">
+                            <RotateCw className="h-2.5 w-2.5 animate-spin" />
+                            <span>Running</span>
                           </span>
                         ) : isStopped ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 inline-flex items-center gap-1">
-                            <Pause className="h-3 w-3" />
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 inline-flex items-center gap-1">
+                            <Pause className="h-2.5 w-2.5" />
                             <span>Stopped</span>
                           </span>
                         ) : null}
                       </div>
 
                       {/* Schedule and Last Run */}
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                      <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400">
                         <span className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                          <span>Schedule: <strong>{site.cron_schedule}</strong></span>
+                          <Clock className="h-3 w-3 text-zinc-400" />
+                          <span>Schedule: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{site.cron_schedule}</strong></span>
                         </span>
-                        <span>•</span>
+                        <span className="text-zinc-300 dark:text-zinc-700">•</span>
                         <span>
                           Last Run: {site.last_run_at ? format(new Date(site.last_run_at), 'dd MMM yyyy, HH:mm') : 'Never'}
                         </span>
                         {site.next_run_at && (
                           <>
-                            <span>•</span>
+                            <span className="text-zinc-300 dark:text-zinc-700">•</span>
                             <span>
                               Next: {format(new Date(site.next_run_at), 'dd MMM, HH:mm')}
                             </span>
@@ -288,37 +286,31 @@ export default function SiteScraper() {
                       </div>
                     </div>
 
-                    {/* Stats Counter Badges */}
-                    <div className="flex items-center gap-4 shrink-0 bg-zinc-50 dark:bg-zinc-950 p-3 rounded-xl border border-zinc-200 dark:border-zinc-850">
-                      <div className="text-center px-2">
-                        <div className="text-[10px] uppercase font-semibold text-zinc-400">Scraped</div>
-                        <div className="text-base font-bold font-mono text-black dark:text-white">
+                    {/* Right side: Button-sized Scraped/Failed Box & Action Buttons */}
+                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                      {/* Scraped & Failed pill - exact button size (h-8) */}
+                      <div className="h-8 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 flex items-center gap-2 text-xs font-mono shrink-0">
+                        <span className="text-zinc-400 text-[11px]">Scraped:</span>
+                        <span className="font-bold text-black dark:text-white">
                           {(site.total_scraped || 0).toLocaleString()}
-                        </div>
-                      </div>
-
-                      <div className="h-6 w-px bg-zinc-200 dark:border-zinc-800" />
-
-                      <div className="text-center px-2">
-                        <div className="text-[10px] uppercase font-semibold text-zinc-400">Failed</div>
-                        <div className={`text-base font-bold font-mono ${site.failed_count > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-400'}`}>
+                        </span>
+                        <span className="text-zinc-300 dark:text-zinc-700">|</span>
+                        <span className="text-zinc-400 text-[11px]">Failed:</span>
+                        <span className={`font-bold ${site.failed_count > 0 ? 'text-red-500' : 'text-zinc-400'}`}>
                           {(site.failed_count || 0).toLocaleString()}
-                        </div>
+                        </span>
                       </div>
-                    </div>
 
-                    {/* Control Actions (Stop / Restart / Run Now) - No remove button */}
-                    <div className="flex items-center gap-2 shrink-0">
                       {/* Stop or Restart Button */}
                       {isStopped ? (
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => handleRestart(site.id, site.name)}
-                          className="h-8.5 px-3 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                          className="h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                           title="Restart and enable scheduled scraping for this site"
                         >
-                          <Play className="h-3.5 w-3.5 fill-current" />
+                          <Play className="h-3 w-3 fill-current" />
                           <span>Restart</span>
                         </button>
                       ) : (
@@ -326,10 +318,10 @@ export default function SiteScraper() {
                           type="button"
                           disabled={busy}
                           onClick={() => handleStop(site.id, site.name)}
-                          className="h-8.5 px-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                          className="h-8 px-2.5 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                           title="Stop and pause scraping for this site"
                         >
-                          <Square className="h-3 w-3 fill-current" />
+                          <Square className="h-2.5 w-2.5 fill-current" />
                           <span>Stop</span>
                         </button>
                       )}
@@ -339,10 +331,10 @@ export default function SiteScraper() {
                         type="button"
                         disabled={busy || isRunning}
                         onClick={() => handleRunNow(site.id, site.name)}
-                        className="h-8.5 px-3.5 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center gap-1.5 transition-opacity cursor-pointer disabled:opacity-50"
+                        className="h-8 px-3 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center gap-1.5 transition-opacity cursor-pointer disabled:opacity-50"
                         title="Execute incremental latest scan now"
                       >
-                        <RotateCw className={`h-3.5 w-3.5 ${isRunning || busy ? 'animate-spin' : ''}`} />
+                        <RotateCw className={`h-3 w-3 ${isRunning || busy ? 'animate-spin' : ''}`} />
                         <span>{isRunning ? 'Scanning...' : 'Run Now'}</span>
                       </button>
                     </div>
@@ -350,7 +342,7 @@ export default function SiteScraper() {
 
                   {/* Last error notice if present */}
                   {site.last_error && (
-                    <div className="mt-3 p-2.5 rounded-lg border border-red-200 dark:border-red-950 bg-red-50/50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <div className="mt-2 p-2 rounded-lg border border-red-200 dark:border-red-950 bg-red-50/50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">Error during last run: {site.last_error}</span>
                     </div>
