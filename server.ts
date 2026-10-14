@@ -1006,11 +1006,11 @@ async function startServer() {
         ];
       }
 
-      let sortOptions: any = { scraped_at: -1, updated_at: -1, created_at: -1, _id: -1 };
-      if (sort === 'date_asc') sortOptions = { scraped_at: 1, updated_at: 1, created_at: 1, _id: 1 };
-      if (sort === 'views_desc') sortOptions = { views: -1 };
-      if (sort === 'views_asc') sortOptions = { views: 1 };
-      if (sort === 'title_asc') sortOptions = { title: 1 };
+      let sortOptions: any = { _id: -1 };
+      if (sort === 'date_asc') sortOptions = { _id: 1 };
+      if (sort === 'views_desc') sortOptions = { views: -1, _id: -1 };
+      if (sort === 'views_asc') sortOptions = { views: 1, _id: 1 };
+      if (sort === 'title_asc') sortOptions = { title: 1, _id: -1 };
 
       const cacheKey = `posts:list:${JSON.stringify({ page, limit, isAll, search, sort, expired_only: req.query.expired_only || req.query.expired })}`;
       const cachedResult = cacheGet<any>(cacheKey);
@@ -1019,6 +1019,7 @@ async function startServer() {
       }
 
       const query = PostModel.find(filter).sort(sortOptions);
+      query.setOptions({ allowDiskUse: true });
       if (!isAll) {
         query.skip((page - 1) * limit).limit(limit);
       }

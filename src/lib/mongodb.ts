@@ -49,6 +49,8 @@ export async function connectToDatabase() {
         if (db) {
           const count = await db.collection('posts').countDocuments();
           console.log(`[MongoDB] Successfully connected to database "${MONGODB_DB_NAME}". Collection "posts" has ${count.toLocaleString()} documents.`);
+          db.collection('posts').createIndex({ scraped_at: -1 }, { background: true }).catch(() => {});
+          db.collection('posts').createIndex({ domain: 1, scraped_at: -1 }, { background: true }).catch(() => {});
         }
       } catch (err) {
         console.warn('[MongoDB] Collection check notice:', err);
@@ -130,6 +132,8 @@ const PostSchema = new mongoose.Schema<IPost>(
 
 PostSchema.index({ created_at: -1 });
 PostSchema.index({ views: -1 });
+PostSchema.index({ scraped_at: -1 });
+PostSchema.index({ domain: 1, scraped_at: -1 });
 
 export const PostModel = mongoose.models.Post || mongoose.model<IPost>('Post', PostSchema, 'posts');
 
