@@ -8,6 +8,7 @@ import { mydesiRestScraperModule } from './mydesiRest.js';
 import { mykamababaScraperModule } from './mykamababa.js';
 import { masahub2ScraperModule } from './masahub2.js';
 import { viralmmsScraperModule } from './viralmms.js';
+import { xxxindianstoriesScraperModule } from './xxxindianstories.js';
 import { SiteScraperModule, ScraperSiteInfo } from './types.js';
 
 // Registry of all individual site scrapers (One file per site)
@@ -21,6 +22,7 @@ const scrapersRegistry: Map<string, SiteScraperModule> = new Map([
   [mykamababaScraperModule.id, mykamababaScraperModule],
   [masahub2ScraperModule.id, masahub2ScraperModule],
   [viralmmsScraperModule.id, viralmmsScraperModule],
+  [xxxindianstoriesScraperModule.id, xxxindianstoriesScraperModule],
 ]);
 
 const activeAbortControllers: Map<string, AbortController> = new Map();
