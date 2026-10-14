@@ -167,8 +167,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        {/* Bottom Section: Storage Card + User Profile */}
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 shrink-0 space-y-4">
+        {/* Bottom Section: Storage Card */}
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
           {/* Storage Card (Clickable to All Videos page) */}
           <Link
             to="/scraped"
@@ -202,17 +202,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </Link>
-
-          {/* User profile row */}
-          <div className="flex items-center gap-3 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
-            <div className="h-8 w-8 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 text-black dark:text-white grid place-items-center text-xs font-semibold shrink-0">
-              AD
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-black dark:text-white truncate leading-tight">Admin User</div>
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">admin@files.app</div>
-            </div>
-          </div>
         </div>
       </aside>
 
