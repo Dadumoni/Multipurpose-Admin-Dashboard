@@ -205,9 +205,6 @@ export default function SiteScraper() {
               Each website runs its dedicated parser module in <code>src/server/scrapers/</code>.
             </p>
           </div>
-          <span className="text-xs font-mono font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-900 px-2 py-0.5 rounded">
-            Scheduled Nightly (00:00)
-          </span>
         </div>
 
         {loading ? (
@@ -267,12 +264,7 @@ export default function SiteScraper() {
                             <Pause className="h-3 w-3" />
                             <span>Stopped</span>
                           </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            <span>Active (00:00)</span>
-                          </span>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Schedule and Last Run */}
@@ -289,7 +281,7 @@ export default function SiteScraper() {
                           <>
                             <span>•</span>
                             <span>
-                              Next: {format(new Date(site.next_run_at), 'dd MMM, 00:00')}
+                              Next: {format(new Date(site.next_run_at), 'dd MMM, HH:mm')}
                             </span>
                           </>
                         )}
