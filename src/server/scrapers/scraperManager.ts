@@ -84,6 +84,22 @@ export async function initScraperManager(): Promise<void> {
       }
     }
 
+    // Ensure posts with missing video_url are populated from 720p_link or 480p_link
+    try {
+      await PostModel.updateMany(
+        { domain: 'www.xxxindianstories.com', $or: [{ video_url: { $exists: false } }, { video_url: null }, { video_url: '' }] },
+        [
+          {
+            $set: {
+              video_url: { $ifNull: ['$720p_link', '$480p_link'] },
+              video_url2: '$720p_link',
+              video_url1: '$480p_link',
+            },
+          },
+        ]
+      );
+    } catch {}
+
     // Start staggered hourly scheduler
     startHourlyScheduler();
     console.log('[SiteScraper] Scraper Manager initialized with staggered hourly schedule (00:00, 01:00, 02:00, 03:00, 04:00).');

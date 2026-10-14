@@ -1586,10 +1586,20 @@ async function startServer() {
       const targetUrl = req.query.url as string;
       if (!targetUrl) return res.status(400).send('Video URL parameter is required');
 
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
       if (req.headers.range) {
         headers['range'] = req.headers.range as string;
       }
+
+      // If the target URL is from a known domain with hotlink protection, attach friendly referer
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.hostname.includes('xxxindianstories')) {
+          headers['Referer'] = 'https://www.xxxindianstories.com/';
+        }
+      } catch {}
 
       const response = await axios({
         method: 'GET',
@@ -1597,10 +1607,14 @@ async function startServer() {
         headers,
         responseType: 'stream',
         validateStatus: (status) => status >= 200 && status < 400,
+        timeout: 20000,
       });
 
       res.status(response.status);
       res.set('Accept-Ranges', 'bytes');
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Headers', 'Range, Content-Range, Content-Type, Content-Length');
+      res.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
       if (response.headers['content-range']) {
         res.set('Content-Range', String(response.headers['content-range']));
       }

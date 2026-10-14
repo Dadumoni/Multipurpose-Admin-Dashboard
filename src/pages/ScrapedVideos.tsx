@@ -228,6 +228,37 @@ function PlyrPlayer({
         }
       });
 
+      // Stream proxy fallback if direct CDN fails (e.g. strict hotlink or CORS block)
+      const handleVideoError = () => {
+        const failedUrl = video.currentSrc || src;
+        if (!failedUrl || failedUrl.includes('/api/stream-proxy')) return;
+        console.warn(`[Plyr] Direct playback error for "${failedUrl}". Switching to /api/stream-proxy fallback.`);
+        const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(failedUrl)}`;
+        try {
+          if (player) {
+            player.source = {
+              type: 'video',
+              sources: [
+                {
+                  src: proxyUrl,
+                  type: 'video/mp4',
+                  size: player.quality || defaultQuality,
+                },
+              ],
+              poster: poster || undefined,
+            };
+            const playPromise = player.play();
+            if (playPromise && typeof (playPromise as any).catch === 'function') {
+              (playPromise as any).catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.warn('[Plyr] Error updating source to stream proxy:', err);
+        }
+      };
+
+      video.addEventListener('error', handleVideoError);
+
       playerRef.current = player;
     } catch (e) {
       console.warn('Plyr init:', e);
@@ -265,11 +296,12 @@ function PlyrPlayer({
         playsInline
         preload="auto"
         poster={poster || undefined}
+        {...({ referrerPolicy: 'no-referrer' } as any)}
         className="h-full w-full object-contain"
         style={{ objectFit: 'contain' }}
       >
         {normalizedSources.map((s) => (
-          <source key={s.size} src={s.src} type="video/mp4" {...({ size: s.size } as any)} />
+          <source key={s.size} src={s.src} type="video/mp4" {...({ size: s.size, referrerPolicy: 'no-referrer' } as any)} />
         ))}
       </video>
     </div>
@@ -1078,6 +1110,7 @@ export default function ScrapedVideos() {
                 duration: doc.duration || prev.duration || null,
                 '720p_link': doc720 || prev['720p_link'],
                 '480p_link': doc480 || prev['480p_link'],
+                video_url: doc.video_url || docStream || prev.video_url,
                 video_url1: doc480 || prev.video_url1,
                 video_url2: doc720 || prev.video_url2,
                 post_url: doc.post_url || prev.post_url,
