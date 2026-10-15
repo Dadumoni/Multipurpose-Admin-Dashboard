@@ -991,25 +991,34 @@ async function startServer() {
       const domainParam = (req.query.domain as string || '').trim();
       const sort = (req.query.sort as string) || 'date_desc';
 
-      const filter: any = {};
+      const andConditions: any[] = [];
       if (req.query.expired_only === 'true' || req.query.expired === 'true') {
-        filter.is_expired = true;
+        andConditions.push({ is_expired: true });
       }
       if (domainParam && domainParam !== 'all') {
         const cleanDomain = domainParam.replace(/^www\./, '');
-        filter.domain = { $regex: cleanDomain, $options: 'i' };
+        andConditions.push({
+          $or: [
+            { domain: { $regex: cleanDomain, $options: 'i' } },
+            { post_url: { $regex: cleanDomain, $options: 'i' } }
+          ]
+        });
       }
       if (search) {
-        filter.$or = [
-          { title: { $regex: search, $options: 'i' } },
-          { video_url: { $regex: search, $options: 'i' } },
-          { post_url: { $regex: search, $options: 'i' } },
-          { video_id: { $regex: search, $options: 'i' } },
-          { domain: { $regex: search, $options: 'i' } },
-          { '720p_link': { $regex: search, $options: 'i' } },
-          { '480p_link': { $regex: search, $options: 'i' } },
-        ];
+        andConditions.push({
+          $or: [
+            { title: { $regex: search, $options: 'i' } },
+            { video_url: { $regex: search, $options: 'i' } },
+            { post_url: { $regex: search, $options: 'i' } },
+            { video_id: { $regex: search, $options: 'i' } },
+            { domain: { $regex: search, $options: 'i' } },
+            { '720p_link': { $regex: search, $options: 'i' } },
+            { '480p_link': { $regex: search, $options: 'i' } },
+          ]
+        });
       }
+
+      const filter: any = andConditions.length > 1 ? { $and: andConditions } : (andConditions.length === 1 ? andConditions[0] : {});
 
       let sortOptions: any = { _id: -1 };
       if (sort === 'date_asc') sortOptions = { _id: 1 };

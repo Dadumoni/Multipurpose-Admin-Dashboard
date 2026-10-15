@@ -50,7 +50,13 @@ export default function ScrapedVideos() {
   const [totalPostsCount, setTotalPostsCount] = useState<number>(0);
   const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
   const [totalViewsCount, setTotalViewsCount] = useState<number>(0);
-  const [domainSources, setDomainSources] = useState<Array<{ domain: string; count: number }>>([]);
+  const [domainSources, setDomainSources] = useState<Array<{ domain: string; count: number }>>(() => {
+    const cachedStats = getClientCache<any>('dashboard_stats_overview');
+    if (cachedStats && Array.isArray(cachedStats.video_sources)) {
+      return cachedStats.video_sources.map((s: any) => ({ domain: s.domain, count: s.count }));
+    }
+    return [];
+  });
   const [loading, setLoading] = useState(true);
   const [activeTable, setActiveTable] = useState<'post' | 'posts' | 'videos'>('post');
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -133,6 +139,31 @@ export default function ScrapedVideos() {
   const pollTimerRef = useRef<any>(null);
   const thumbnailAbortRef = useRef<AbortController | null>(null);
 
+  // Handler to select and filter by domain
+  const handleSelectDomain = (domain: string) => {
+    setSourceFilter(domain);
+    setSortDropdownOpen(false);
+    setCurrentPage(1);
+    setIsViewingExpired(false);
+    setIsViewingDuplicates(false);
+    setSelectedIds(new Set());
+    if (domain === 'all') {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('domain');
+        return next;
+      });
+      toast.success('Showing all domains');
+    } else {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('domain', domain);
+        return next;
+      });
+      toast.success(`Filtered: ${domain}`);
+    }
+  };
+
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -158,6 +189,8 @@ export default function ScrapedVideos() {
         }
       }, 150);
       return () => clearTimeout(timer);
+    } else {
+      setSourceFilter(prev => prev === 'all' ? prev : 'all');
     }
   }, [searchParams]);
 
@@ -174,19 +207,20 @@ export default function ScrapedVideos() {
       const res = await fetch('/api/stats/overview');
       if (res.ok) {
         const json = await res.json();
-        const data = json.data || {};
+        const data = json.stats || json.data || json || {};
         if (typeof data.total_posts === 'number') {
           setTotalPostsCount(data.total_posts);
         }
         if (typeof data.total_views === 'number') {
           setTotalViewsCount(data.total_views);
         }
-        if (Array.isArray(data.video_sources)) {
+        if (Array.isArray(data.video_sources) && data.video_sources.length > 0) {
           setDomainSources(data.video_sources.map((s: any) => ({
             domain: s.domain,
             count: s.count,
           })));
         }
+        setClientCache('dashboard_stats_overview', data);
       }
     } catch (e) {
       console.warn('Overview stats fetch notice:', e);
@@ -982,12 +1016,7 @@ export default function ScrapedVideos() {
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setSourceFilter('all');
-                      setSortDropdownOpen(false);
-                      setCurrentPage(1);
-                      toast.success('Showing all domains');
-                    }}
+                    onClick={() => handleSelectDomain('all')}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
                       sourceFilter === 'all'
                         ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-black dark:text-white'
@@ -1002,12 +1031,7 @@ export default function ScrapedVideos() {
                     <button
                       key={domain}
                       type="button"
-                      onClick={() => {
-                        setSourceFilter(domain);
-                        setSortDropdownOpen(false);
-                        setCurrentPage(1);
-                        toast.success(`Filtered: ${domain}`);
-                      }}
+                      onClick={() => handleSelectDomain(domain)}
                       className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
                         sourceFilter === domain
                           ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-black dark:text-white'
