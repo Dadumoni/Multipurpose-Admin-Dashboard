@@ -988,11 +988,16 @@ async function startServer() {
       const isAll = req.query.limit === 'all';
       const limit = isAll ? 50000 : Math.min(1000, Math.max(1, parseInt(req.query.limit as string) || 100));
       const search = (req.query.search as string || '').trim();
+      const domainParam = (req.query.domain as string || '').trim();
       const sort = (req.query.sort as string) || 'date_desc';
 
       const filter: any = {};
       if (req.query.expired_only === 'true' || req.query.expired === 'true') {
         filter.is_expired = true;
+      }
+      if (domainParam && domainParam !== 'all') {
+        const cleanDomain = domainParam.replace(/^www\./, '');
+        filter.domain = { $regex: cleanDomain, $options: 'i' };
       }
       if (search) {
         filter.$or = [
@@ -1012,7 +1017,7 @@ async function startServer() {
       if (sort === 'views_asc') sortOptions = { views: 1, _id: 1 };
       if (sort === 'title_asc') sortOptions = { title: 1, _id: -1 };
 
-      const cacheKey = `posts:list:${JSON.stringify({ page, limit, isAll, search, sort, expired_only: req.query.expired_only || req.query.expired })}`;
+      const cacheKey = `posts:list:${JSON.stringify({ page, limit, isAll, search, domain: domainParam, sort, expired_only: req.query.expired_only || req.query.expired })}`;
       const cachedResult = cacheGet<any>(cacheKey);
       if (cachedResult) {
         return res.json(cachedResult);
@@ -1042,6 +1047,68 @@ async function startServer() {
     } catch (error: any) {
       console.error('Failed to query MongoDB posts:', error);
       res.status(500).json({ error: error.message || 'Failed to query MongoDB posts' });
+    }
+  });
+
+  // 1b. GET /api/posts/duplicates - Fast aggregation to detect duplicate video links in MongoDB
+  app.get('/api/posts/duplicates', async (_req, res) => {
+    try {
+      await connectToDatabase();
+      const dupAgg = await PostModel.aggregate([
+        {
+          $match: {
+            video_url: { $type: 'string', $gt: 'http' }
+          }
+        },
+        {
+          $group: {
+            _id: '$video_url',
+            count: { $sum: 1 },
+            docs: {
+              $push: {
+                _id: '$_id',
+                id: '$id',
+                title: '$title',
+                video_url: '$video_url',
+                thumbnail_url: '$thumbnail_url',
+                created_at: '$created_at',
+                scraped_at: '$scraped_at',
+                views: '$views',
+                domain: '$domain',
+                duration: '$duration',
+                '720p_link': '$720p_link',
+                '480p_link': '$480p_link',
+                is_expired: '$is_expired'
+              }
+            }
+          }
+        },
+        { $match: { count: { $gt: 1 } } },
+        { $limit: 100 }
+      ]);
+
+      const pairs: any[] = [];
+      dupAgg.forEach(group => {
+        const docs = group.docs;
+        if (docs && docs.length >= 2) {
+          const original = docs[0];
+          for (let i = 1; i < docs.length; i++) {
+            const duplicate = docs[i];
+            pairs.push({
+              id: `${original.id || original._id}-${duplicate.id || duplicate._id}`,
+              original,
+              duplicate,
+              reason: 'Duplicate Stream Link',
+              detail: group._id
+            });
+          }
+        }
+      });
+
+      res.json({ success: true, pairs });
+    } catch (error: any) {
+      console.error('Failed to detect duplicates in MongoDB:', error);
+      res.status(500).json({ error: error.message || 'Failed to detect duplicates' });
     }
   });
 
