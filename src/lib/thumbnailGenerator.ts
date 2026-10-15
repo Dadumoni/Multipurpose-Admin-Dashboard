@@ -328,7 +328,7 @@ export async function generateMultiGridThumbnail(
       ctx.stroke();
     }
 
-    const dataUrl = outCanvas.toDataURL('image/jpeg', 0.90);
+    const dataUrl = outCanvas.toDataURL('image/webp', 0.80);
 
     // 6. Upload generated thumbnail directly to Cloudflare R2 bucket via backend API
     let finalUrl = dataUrl;

@@ -73,7 +73,7 @@ export default function ScrapedVideos() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 12;
+  const [pageSize, setPageSize] = useState<number>(12);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
@@ -1192,7 +1192,7 @@ export default function ScrapedVideos() {
           ) : viewMode === 'grid' ? (
             /* GRID VIEW */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {videos.map((video: ScrapedVideo) => (
+              {videos.map((video: ScrapedVideo, idx: number) => (
                 <VideoGridCard
                   key={video.id}
                   video={video}
@@ -1201,6 +1201,7 @@ export default function ScrapedVideos() {
                   openPreview={openPreview}
                   setContextMenu={setContextMenu}
                   duplicateReasonMap={duplicateReasonMap}
+                  priority={idx < 4}
                 />
               ))}
             </div>
@@ -1225,7 +1226,7 @@ export default function ScrapedVideos() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {videos.map((video: ScrapedVideo) => (
+                  {videos.map((video: ScrapedVideo, idx: number) => (
                     <VideoListRow
                       key={video.id}
                       video={video}
@@ -1235,6 +1236,7 @@ export default function ScrapedVideos() {
                       setVideoToDelete={setVideoToDelete}
                       setDeleteConfirmOpen={setDeleteConfirmOpen}
                       duplicateReasonMap={duplicateReasonMap}
+                      priority={idx < 4}
                     />
                   ))}
                 </tbody>
@@ -1243,9 +1245,31 @@ export default function ScrapedVideos() {
           )}
 
           {/* Pagination */}
-          {!isViewingDuplicates && totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 px-2 text-xs text-zinc-500 dark:text-zinc-400">
-              <span>Showing Page {currentPage} of {totalPages} ({totalFilteredCount.toLocaleString()} total posts)</span>
+          {!isViewingDuplicates && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 px-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>Showing Page {currentPage} of {totalPages} ({totalFilteredCount.toLocaleString()} total posts)</span>
+                <div className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-3">
+                  <span className="text-[11px] text-zinc-400">Per page:</span>
+                  {[12, 24, 36, 48].map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => {
+                        setPageSize(size);
+                        setCurrentPage(1);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                        pageSize === size
+                          ? 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'
+                          : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"

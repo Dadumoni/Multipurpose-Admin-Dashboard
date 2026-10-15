@@ -156,6 +156,7 @@ export function DuplicateComparisonView({
                         alt={orig.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                         fallbackIcon={<FileVideo className="h-8 w-8 text-zinc-400" />}
+                        priority={index === 0}
                       />
                       <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity grid place-items-center">
                         <div className="h-9 w-9 rounded-full bg-white text-zinc-900 grid place-items-center shadow-md pl-0.5">
@@ -262,6 +263,7 @@ export function DuplicateComparisonView({
                         alt={dup.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                         fallbackIcon={<FileVideo className="h-8 w-8 text-zinc-400" />}
+                        priority={index === 0}
                       />
                       <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity grid place-items-center">
                         <div className="h-9 w-9 rounded-full bg-white text-zinc-900 grid place-items-center shadow-md pl-0.5">

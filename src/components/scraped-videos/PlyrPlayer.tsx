@@ -150,6 +150,14 @@ export function PlyrPlayer({
     }
   }, [src, normalizedSources]);
 
+  const optimizedPoster = useMemo(() => {
+    if (!poster) return undefined;
+    if (poster.startsWith('data:') || poster.startsWith('blob:') || poster.includes('/api/image-optimizer')) {
+      return poster;
+    }
+    return `/api/image-optimizer?url=${encodeURIComponent(poster)}&w=800&q=80&format=webp`;
+  }, [poster]);
+
   return (
     <div
       key={sourcesKey}
@@ -159,7 +167,7 @@ export function PlyrPlayer({
         ref={videoRef}
         playsInline
         preload="auto"
-        poster={poster || undefined}
+        poster={optimizedPoster}
         {...({ referrerPolicy: 'no-referrer' } as any)}
         className="h-full w-full object-contain"
         style={{ objectFit: 'contain' }}
@@ -177,44 +185,109 @@ export function LazyThumbnail({
   alt,
   className,
   fallbackIcon,
+  priority = false,
 }: {
   src?: string | null;
   alt?: string;
   className?: string;
   fallbackIcon?: React.ReactNode;
+  priority?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [isInView, setIsInView] = useState(priority);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoaded(false);
     setHasError(false);
   }, [src]);
 
+  // True IntersectionObserver for viewport-based lazy loading
+  useEffect(() => {
+    if (priority || isInView) return;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (!('IntersectionObserver' in window)) {
+      setIsInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsInView(true);
+            observer.disconnect();
+          }
+        });
+      },
+      {
+        rootMargin: '250px 0px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [priority, isInView]);
+
   if (!src || hasError) {
     return (
-      <div className="h-full w-full flex items-center justify-center text-zinc-400 dark:text-zinc-500">
-        {fallbackIcon || <FileVideo className="h-6 w-6" />}
+      <div ref={containerRef} className="h-full w-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500">
+        {fallbackIcon || <FileVideo className="h-6 w-6 opacity-60" />}
       </div>
     );
   }
 
+  // Optimize image URL on-the-fly to compressed WebP (Cloudflare R2 or external CDN images)
+  const optimizedSrc = (() => {
+    if (!src) return '';
+    if (src.startsWith('data:') || src.startsWith('blob:') || src.includes('/api/image-optimizer')) {
+      return src;
+    }
+    return `/api/image-optimizer?url=${encodeURIComponent(src)}&w=480&q=75&format=webp`;
+  })();
+
   return (
-    <div className="relative h-full w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900">
+      {/* Animated Shimmering Skeleton Placeholder */}
       {!loaded && (
-        <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse flex items-center justify-center z-0">
+        <div className="absolute inset-0 z-0 bg-gradient-to-r from-zinc-200 via-zinc-100 to-zinc-200 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900 bg-[length:200%_100%] animate-pulse flex items-center justify-center">
           <Film className="h-5 w-5 text-zinc-300 dark:text-zinc-700 animate-pulse" />
         </div>
       )}
-      <img
-        src={src}
-        alt={alt || ''}
-        loading="lazy"
-        onLoad={() => setLoaded(true)}
-        onError={() => setHasError(true)}
-        className={`${className || ''} ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-200`}
-        referrerPolicy="no-referrer"
-      />
+
+      {isInView && (
+        <img
+          src={optimizedSrc}
+          alt={alt || ''}
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          {...({ fetchPriority: priority ? 'high' : 'low' } as any)}
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            // If optimizer URL fails, retry with raw source directly as fallback
+            if (optimizedSrc !== src) {
+              const testImg = new Image();
+              testImg.onload = () => setLoaded(true);
+              testImg.onerror = () => setHasError(true);
+              testImg.src = src;
+            } else {
+              setHasError(true);
+            }
+          }}
+          className={`${className || ''} ${
+            loaded ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-95 blur-xs'
+          } transition-all duration-300 ease-out`}
+          referrerPolicy="no-referrer"
+        />
+      )}
     </div>
   );
 }

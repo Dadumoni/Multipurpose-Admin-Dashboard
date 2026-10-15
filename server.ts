@@ -39,6 +39,7 @@ import https from 'https';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import os from 'os';
+import sharp from 'sharp';
 
 dotenv.config();
 initConsoleLogger();
@@ -198,8 +199,23 @@ async function startServer() {
       }
 
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
-      const filename = `thumb-${id}-${Date.now()}.jpg`;
+      const rawBuffer = Buffer.from(base64Data, 'base64');
+
+      let uploadBuffer = rawBuffer;
+      let contentType = 'image/webp';
+      let extension = 'webp';
+
+      try {
+        uploadBuffer = await sharp(rawBuffer)
+          .webp({ quality: 80, effort: 4 })
+          .toBuffer();
+      } catch (sharpErr) {
+        console.warn('[Sharp] WebP conversion fallback, uploading raw image buffer:', sharpErr);
+        contentType = imageBase64.includes('image/png') ? 'image/png' : 'image/jpeg';
+        extension = imageBase64.includes('image/png') ? 'png' : 'jpg';
+      }
+
+      const filename = `thumb-${id}-${Date.now()}.${extension}`;
       const r2Key = `thumbnails/${filename}`;
       const bucket = (process.env.R2_BUCKET_NAME || 'thumbnails').trim();
 
@@ -208,8 +224,8 @@ async function startServer() {
       const command = new PutObjectCommand({
         Bucket: bucket,
         Key: r2Key,
-        Body: buffer,
-        ContentType: 'image/jpeg',
+        Body: uploadBuffer,
+        ContentType: contentType,
         CacheControl: 'public, max-age=31536000, immutable',
       });
       await s3.send(command);
@@ -1707,6 +1723,93 @@ async function startServer() {
     } catch (error: any) {
       console.error('Stream proxy error:', error?.message);
       res.status(502).send('Error streaming media');
+    }
+  });
+
+  // 5c. GET /api/image-optimizer - Real-time Image Compression, Resizing & WebP/AVIF Converter
+  const imageCacheDir = path.join(process.cwd(), 'node_modules', '.cache', 'optimized-images');
+  try {
+    if (!fs.existsSync(imageCacheDir)) {
+      fs.mkdirSync(imageCacheDir, { recursive: true });
+    }
+  } catch {}
+
+  app.get('/api/image-optimizer', async (req, res) => {
+    try {
+      const targetUrl = (req.query.url as string || '').trim();
+      if (!targetUrl) {
+        return res.status(400).send('Image URL parameter is required');
+      }
+
+      const width = Math.min(1920, Math.max(80, parseInt(req.query.w as string) || 480));
+      const quality = Math.min(100, Math.max(40, parseInt(req.query.q as string) || 75));
+      const requestedFormat = (req.query.format as string || '').toLowerCase();
+
+      const acceptHeader = req.headers.accept || '';
+      const chosenFormat = requestedFormat === 'avif' || (!requestedFormat && acceptHeader.includes('image/avif'))
+        ? 'avif'
+        : 'webp';
+
+      const cacheKey = crypto.createHash('md5').update(`${targetUrl}|${width}|${quality}|${chosenFormat}`).digest('hex');
+      const cachedFilePath = path.join(imageCacheDir, `${cacheKey}.${chosenFormat}`);
+      const etag = `"${cacheKey}"`;
+
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('ETag', etag);
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      // Check on-disk cache
+      if (fs.existsSync(cachedFilePath)) {
+        res.setHeader('Content-Type', `image/${chosenFormat}`);
+        return fs.createReadStream(cachedFilePath).pipe(res);
+      }
+
+      // Download original image (with anti-hotlinking headers if needed)
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
+      if (targetUrl.includes('xxxindianstories')) {
+        headers['Referer'] = 'https://www.xxxindianstories.com/';
+      }
+
+      const imgResponse = await axios({
+        method: 'GET',
+        url: targetUrl,
+        headers,
+        responseType: 'arraybuffer',
+        timeout: 12000,
+        validateStatus: (status) => status >= 200 && status < 400,
+      });
+
+      const inputBuffer = Buffer.from(imgResponse.data);
+
+      let transform = sharp(inputBuffer)
+        .resize({ width, withoutEnlargement: true });
+
+      if (chosenFormat === 'avif') {
+        transform = transform.avif({ quality, effort: 3 });
+      } else {
+        transform = transform.webp({ quality, effort: 4 });
+      }
+
+      const outputBuffer = await transform.toBuffer();
+
+      // Write to cache in background
+      fs.promises.writeFile(cachedFilePath, outputBuffer).catch(() => {});
+
+      res.setHeader('Content-Type', `image/${chosenFormat}`);
+      res.setHeader('Content-Length', String(outputBuffer.length));
+      return res.send(outputBuffer);
+    } catch (err: any) {
+      // If image compression failed (e.g. invalid image or external domain timeout), redirect to original URL as fallback
+      const targetUrl = req.query.url as string;
+      if (targetUrl) {
+        return res.redirect(targetUrl);
+      }
+      return res.status(500).send('Image optimization failed');
     }
   });
 

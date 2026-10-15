@@ -10,6 +10,7 @@ interface VideoGridCardProps {
   openPreview: (video: ScrapedVideo) => void;
   setContextMenu: (menu: { x: number; y: number; video: ScrapedVideo }) => void;
   duplicateReasonMap: Map<string | number, string[]>;
+  priority?: boolean;
 }
 
 export function VideoGridCard({
@@ -19,6 +20,7 @@ export function VideoGridCard({
   openPreview,
   setContextMenu,
   duplicateReasonMap,
+  priority = false,
 }: VideoGridCardProps) {
   const videoId = video.id || video._id || '';
   const reasons = duplicateReasonMap.get(video.id) || (video._id ? duplicateReasonMap.get(video._id) : undefined);
@@ -41,6 +43,7 @@ export function VideoGridCard({
         <LazyThumbnail
           src={video.thumbnail_url}
           alt={video.title}
+          priority={priority}
           className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
           fallbackIcon={<FileVideo className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />}
         />
@@ -117,6 +120,7 @@ interface VideoListRowProps {
   setVideoToDelete: (id: string | number | null) => void;
   setDeleteConfirmOpen: (open: boolean) => void;
   duplicateReasonMap: Map<string | number, string[]>;
+  priority?: boolean;
 }
 
 export function VideoListRow({
@@ -127,6 +131,7 @@ export function VideoListRow({
   setVideoToDelete,
   setDeleteConfirmOpen,
   duplicateReasonMap,
+  priority = false,
 }: VideoListRowProps) {
   const reasons = duplicateReasonMap.get(video.id) || (video._id ? duplicateReasonMap.get(video._id) : undefined);
 
@@ -150,6 +155,7 @@ export function VideoListRow({
           <LazyThumbnail
             src={video.thumbnail_url}
             alt=""
+            priority={priority}
             className="h-full w-full object-cover"
             fallbackIcon={<FileVideo className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />}
           />
