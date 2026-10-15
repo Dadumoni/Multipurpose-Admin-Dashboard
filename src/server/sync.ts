@@ -1,6 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { MongoClient } from 'mongodb';
+import dns from 'node:dns';
 import { connectToDatabase, PostModel, SyncSettingsModel } from '../lib/mongodb.js';
+
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch {}
 
 const MONGO_DB_NAME = 'videos_db';
 const MONGO_COLLECTION_NAME = 'posts';
@@ -25,10 +30,45 @@ export function generateSafeSlug(doc: Record<string, any>): string {
   return slugifyText(combinedText);
 }
 
+function parseToUnixSeconds(val: any): number | null {
+  if (val === undefined || val === null || val === '') return null;
+  if (typeof val === 'number') {
+    return val > 1e11 ? val / 1000 : val;
+  }
+  if (val instanceof Date) {
+    return val.getTime() / 1000;
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num)) {
+      return num > 1e11 ? num / 1000 : num;
+    }
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return d.getTime() / 1000;
+    }
+  }
+  return null;
+}
+
+function parseToUnixMs(val: any): number | null {
+  if (val === undefined || val === null || val === '') return null;
+  if (typeof val === 'number') return val;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num)) return num;
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  return null;
+}
+
 export interface MigrationProgress {
   inProgress: boolean;
   totalDocs: number;
   processedDocs: number;
+  existingCount: number;
   successCount: number;
   errorCount: number;
   startedAt: string | null;
@@ -40,6 +80,7 @@ const migrationProgress: MigrationProgress = {
   inProgress: false,
   totalDocs: 0,
   processedDocs: 0,
+  existingCount: 0,
   successCount: 0,
   errorCount: 0,
   startedAt: null,
@@ -57,10 +98,13 @@ export function getMigrationProgress(): MigrationProgress {
 
 /**
  * Native Node.js / TypeScript background migration from MongoDB (videos_db.posts)
- * to Supabase (viralhub_db), matching the exact document transformation logic.
+ * to Supabase (viralhub_db).
+ * INCREMENTAL SYNC: First checks all existing records in Supabase (id, video_id, post_url),
+ * skips them completely, and only copies new/missing data in batches of 50.
  */
 export async function migrateMongoToSupabase(): Promise<{
   totalProcessed: number;
+  alreadyExisting: number;
   successCount: number;
   errorCount: number;
 }> {
@@ -79,6 +123,7 @@ export async function migrateMongoToSupabase(): Promise<{
     console.log('[DB Sync] Migration is already running in the background.');
     return {
       totalProcessed: migrationProgress.processedDocs,
+      alreadyExisting: migrationProgress.existingCount,
       successCount: migrationProgress.successCount,
       errorCount: migrationProgress.errorCount,
     };
@@ -87,6 +132,7 @@ export async function migrateMongoToSupabase(): Promise<{
   migrationProgress.inProgress = true;
   migrationProgress.totalDocs = 0;
   migrationProgress.processedDocs = 0;
+  migrationProgress.existingCount = 0;
   migrationProgress.successCount = 0;
   migrationProgress.errorCount = 0;
   migrationProgress.startedAt = new Date().toISOString();
@@ -96,63 +142,181 @@ export async function migrateMongoToSupabase(): Promise<{
   let mongoClient: MongoClient | null = null;
 
   try {
-    console.log('[DB Sync] Starting MongoDB → Supabase (viralhub_db) background migration...');
-    mongoClient = new MongoClient(mongoUri);
-    await mongoClient.connect();
-    const collection = mongoClient.db(MONGO_DB_NAME).collection(MONGO_COLLECTION_NAME);
+    console.log(`[DB Sync] Starting incremental MongoDB → Supabase (${SUPABASE_TABLE_NAME}) synchronization...`);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`Fetching data from MongoDB (${MONGO_DB_NAME}.${MONGO_COLLECTION_NAME})...`);
-    const documents = await collection.find({}).toArray();
-    const totalDocs = documents.length;
-    migrationProgress.totalDocs = totalDocs;
-    console.log(`Total ${totalDocs} documents found for migration.`);
+    // 1. Fetch all existing IDs, video_ids, and post_urls from Supabase viralhub_db
+    console.log(`[DB Sync] Checking existing records in Supabase (${SUPABASE_TABLE_NAME})...`);
+    const existingIds = new Set<string>();
+    const existingVideoIds = new Set<string>();
+    const existingPostUrls = new Set<string>();
 
-    let successCount = 0;
-    let errorCount = 0;
+    let from = 0;
+    const FETCH_CHUNK = 1000;
+    let hasMore = true;
 
-    for (const rawDoc of documents) {
-      const doc: Record<string, any> = { ...rawDoc };
-      try {
-        // 1. Convert MongoDB ObjectId to string 'id'
-        doc.id = String(doc._id);
-        delete doc._id;
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from(SUPABASE_TABLE_NAME)
+        .select('id, video_id, post_url')
+        .range(from, from + FETCH_CHUNK - 1);
 
-        // 2. Remove redundant 'all_links' to save space
-        if ('all_links' in doc) {
-          delete doc.all_links;
-        }
+      if (error) {
+        console.error(`[DB Sync] Error querying Supabase ${SUPABASE_TABLE_NAME}:`, error.message);
+        throw new Error(error.message);
+      }
 
-        // 3. Add clean and unique slug
-        doc.slug = generateSafeSlug(doc);
+      if (!data || data.length === 0) {
+        break;
+      }
 
-        // 4. Upsert data into Supabase (viralhub_db)
-        const { error } = await supabase.from(SUPABASE_TABLE_NAME).upsert(doc);
-        if (error) {
-          throw new Error(error.message);
-        }
+      for (const row of data) {
+        if (row.id) existingIds.add(String(row.id));
+        if (row.video_id) existingVideoIds.add(String(row.video_id));
+        if (row.post_url) existingPostUrls.add(String(row.post_url));
+      }
 
-        successCount += 1;
-        migrationProgress.successCount = successCount;
-        console.log(`[Success] Migrated: ${doc.title} (Slug: ${doc.slug})`);
-      } catch (e: any) {
-        errorCount += 1;
-        migrationProgress.errorCount = errorCount;
-        migrationProgress.lastError = e?.message || String(e);
-        console.error(`[Error] Failed for ID ${doc.id || 'Unknown'}: ${e?.message || e}`);
-      } finally {
-        migrationProgress.processedDocs += 1;
+      if (data.length < FETCH_CHUNK) {
+        hasMore = false;
+      } else {
+        from += FETCH_CHUNK;
       }
     }
 
-    console.log(`--- Migration Summary --- Total Processed: ${totalDocs} | Successfully Migrated: ${successCount} | Failed / Errors: ${errorCount}`);
+    const existingCount = existingIds.size;
+    migrationProgress.existingCount = existingCount;
+    console.log(`[DB Sync] Found ${existingCount.toLocaleString()} existing records in Supabase (${SUPABASE_TABLE_NAME}).`);
+
+    // 2. Connect to MongoDB and scan documents
+    mongoClient = new MongoClient(mongoUri);
+    await mongoClient.connect();
+    const collection = mongoClient.db(MONGO_DB_NAME).collection(MONGO_COLLECTION_NAME);
+
+    const totalMongoDocs = await collection.countDocuments();
+    migrationProgress.totalDocs = totalMongoDocs;
+    console.log(`[DB Sync] Total ${totalMongoDocs.toLocaleString()} documents found in MongoDB (${MONGO_DB_NAME}.${MONGO_COLLECTION_NAME}).`);
+
+    // Stream MongoDB documents through cursor to keep memory footprint minimal (<15MB)
+    const cursor = collection.find({}).batchSize(500);
+
+    let skippedCount = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    const pendingBatch: any[] = [];
+    const BATCH_SIZE = 50;
+
+    const commitBatch = async (batch: any[]) => {
+      if (batch.length === 0) return;
+      try {
+        const { error } = await supabase.from(SUPABASE_TABLE_NAME).upsert(batch, { onConflict: 'id' });
+        if (error) {
+          console.warn(`[DB Sync] Batch upsert warning (${error.message}). Retrying row-by-row...`);
+          // Row-by-row fallback
+          for (const item of batch) {
+            try {
+              const { error: rowErr } = await supabase.from(SUPABASE_TABLE_NAME).upsert([item], { onConflict: 'id' });
+              if (rowErr) throw new Error(rowErr.message);
+              successCount++;
+              existingIds.add(item.id);
+              if (item.video_id) existingVideoIds.add(item.video_id);
+              if (item.post_url) existingPostUrls.add(item.post_url);
+            } catch (singleErr: any) {
+              errorCount++;
+              migrationProgress.lastError = singleErr.message || String(singleErr);
+              console.error(`[Error] Failed to migrate doc ID ${item.id}:`, singleErr.message || singleErr);
+            } finally {
+              migrationProgress.processedDocs++;
+              migrationProgress.successCount = successCount;
+              migrationProgress.errorCount = errorCount;
+            }
+          }
+        } else {
+          successCount += batch.length;
+          migrationProgress.processedDocs += batch.length;
+          migrationProgress.successCount = successCount;
+          batch.forEach((item) => {
+            existingIds.add(item.id);
+            if (item.video_id) existingVideoIds.add(item.video_id);
+            if (item.post_url) existingPostUrls.add(item.post_url);
+          });
+          const sampleTitle = batch[0]?.title || 'Video';
+          console.log(`[Success] Copied batch of ${batch.length} new videos (e.g. "${sampleTitle.slice(0, 40)}...") | Total newly copied: ${successCount.toLocaleString()}`);
+        }
+      } catch (err: any) {
+        errorCount += batch.length;
+        migrationProgress.processedDocs += batch.length;
+        migrationProgress.errorCount = errorCount;
+        migrationProgress.lastError = err.message || String(err);
+        console.error(`[Error] Batch sync failed:`, err.message || err);
+      }
+    };
+
+    for await (const rawDoc of cursor) {
+      const mongoId = String(rawDoc._id);
+      const videoId = rawDoc.video_id ? String(rawDoc.video_id) : null;
+      const postUrl = rawDoc.post_url ? String(rawDoc.post_url) : null;
+
+      // Incremental check: SKIP if already present in Supabase!
+      const alreadyExists =
+        existingIds.has(mongoId) ||
+        (videoId && existingVideoIds.has(videoId)) ||
+        (postUrl && existingPostUrls.has(postUrl));
+
+      if (alreadyExists) {
+        skippedCount++;
+        migrationProgress.processedDocs++;
+        continue;
+      }
+
+      // Format document according to Supabase viralhub_db schema
+      const targetDoc: Record<string, any> = {
+        id: mongoId,
+        slug: generateSafeSlug(rawDoc),
+        video_id: videoId,
+        title: (rawDoc.title || 'Untitled Video').trim(),
+        post_url: postUrl,
+        '480p_link': rawDoc['480p_link'] || rawDoc.video_url1 || null,
+        '720p_link': rawDoc['720p_link'] || rawDoc.video_url2 || null,
+        domain: rawDoc.domain || null,
+        duration: rawDoc.duration || null,
+        scraped_at: parseToUnixSeconds(rawDoc.scraped_at) || parseToUnixSeconds(rawDoc.created_at) || null,
+        thumbnail_url: rawDoc.thumbnail_url || null,
+        views: Number(rawDoc.views) || 0,
+        updated_at: parseToUnixMs(rawDoc.updated_at) || Date.now(),
+        site: rawDoc.site || rawDoc.domain || null,
+      };
+
+      pendingBatch.push(targetDoc);
+
+      if (pendingBatch.length >= BATCH_SIZE) {
+        const toSend = [...pendingBatch];
+        pendingBatch.length = 0;
+        await commitBatch(toSend);
+      }
+    }
+
+    // Flush any remaining records
+    if (pendingBatch.length > 0) {
+      await commitBatch(pendingBatch);
+    }
+
+    if (successCount === 0 && errorCount === 0) {
+      console.log(`[DB Sync] All ${totalMongoDocs.toLocaleString()} records already exist in Supabase! 0 new records were copied.`);
+    }
+
+    console.log(
+      `--- Migration Summary --- Total in Mongo: ${totalMongoDocs.toLocaleString()} | Already in Supabase (Skipped): ${skippedCount.toLocaleString()} | Newly Copied: ${successCount.toLocaleString()} | Errors: ${errorCount}`
+    );
 
     syncStatus.lastSync = new Date().toISOString();
-    syncStatus.backedUpToSupabase = successCount;
+    syncStatus.backedUpToSupabase = existingCount + successCount;
+    syncStatus.supabaseCount = existingCount + successCount;
+    syncStatus.mongoCount = totalMongoDocs;
     syncStatus.table = SUPABASE_TABLE_NAME;
 
     return {
-      totalProcessed: totalDocs,
+      totalProcessed: totalMongoDocs,
+      alreadyExisting: skippedCount,
       successCount,
       errorCount,
     };
@@ -275,28 +439,37 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
     // 2. Connect to Supabase (Backup Database)
     const supabaseClient = getSupabaseClient(options?.customUrl, options?.customKey);
 
-    // Determine target table in Supabase: Check 'post' first, fallback to 'posts'
-    let targetTable = 'post';
-    const { data: testData, error: testError } = await supabaseClient
-      .from('post')
+    // Determine target table in Supabase: Check 'viralhub_db' first, then 'post' / 'posts'
+    let targetTable = 'viralhub_db';
+    const { data: vTest, error: vError } = await supabaseClient
+      .from('viralhub_db')
       .select('id')
       .limit(1);
 
-    if (testError && (testError.code === 'PGRST205' || testError.message?.includes('schema cache'))) {
-      const { data: postsTest, error: postsError } = await supabaseClient
-        .from('posts')
+    if (vError && (vError.code === 'PGRST205' || vError.message?.includes('schema cache'))) {
+      const { data: postTest, error: postError } = await supabaseClient
+        .from('post')
         .select('id')
         .limit(1);
 
-      if (!postsError && postsTest) {
-        targetTable = 'posts';
-      } else {
+      if (!postError && postTest) {
         targetTable = 'post';
+      } else {
+        const { data: postsTest, error: postsError } = await supabaseClient
+          .from('posts')
+          .select('id')
+          .limit(1);
+
+        if (!postsError && postsTest) {
+          targetTable = 'posts';
+        } else {
+          targetTable = 'viralhub_db';
+        }
       }
     }
 
     syncStatus.table = targetTable;
-    console.log(`[Sync] Starting Bidirectional Sync between MongoDB "post" and Supabase "${targetTable}"...`);
+    console.log(`[Sync] Starting Bidirectional Sync between MongoDB "posts" and Supabase "${targetTable}"...`);
 
     // =========================================================================
     // DIRECTION 1: Supabase → MongoDB (Import / copy data into MongoDB)
@@ -312,11 +485,10 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
       const { data, error } = await supabaseClient
         .from(targetTable)
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .range(from, to);
 
       if (error) {
-        // If table doesn't exist yet in Supabase, we will proceed to Direction 2 (MongoDB -> Supabase)
         console.warn(`[Sync] Notice reading from Supabase "${targetTable}":`, error.message);
         break;
       }
@@ -330,22 +502,22 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
 
       // Bulk upsert into MongoDB 'posts' collection keyed by unique video_url
       const bulkOps = data
-        .filter((item: any) => Boolean(item.video_url || item.anonmp4_url || item.zerostorage))
+        .filter((item: any) => Boolean(item['720p_link'] || item['480p_link'] || item.video_url || item.post_url))
         .map((item: any) => {
-          const videoUrl = item.video_url || item.anonmp4_url || item.zerostorage;
+          const videoUrl = item['720p_link'] || item['480p_link'] || item.video_url || item.post_url;
           return {
             updateOne: {
               filter: { video_url: videoUrl },
               update: {
-                $set: {
+                $setOnInsert: {
                   id: Number(item.id) || Date.now(),
                   title: item.title || 'Untitled Video',
                   video_url: videoUrl,
                   thumbnail_url: item.thumbnail_url || null,
                   created_at: item.created_at ? new Date(item.created_at) : new Date(),
                   views: Number(item.views) || 0,
-                  video_url1: item.video_url1 || item.abyss || item.anonmp4_url || null,
-                  video_url2: item.video_url2 || item.zerostorage || null,
+                  video_url1: item['480p_link'] || item.video_url1 || null,
+                  video_url2: item['720p_link'] || item.video_url2 || null,
                   synced_at: new Date(),
                 },
               },
@@ -367,38 +539,35 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
     }
 
     // =========================================================================
-    // DIRECTION 2: MongoDB → Supabase (Backup / copy data into Supabase)
-    // Keep both databases' 'post' data equal and synchronized
+    // DIRECTION 2: MongoDB → Supabase (Incremental Backup)
     // =========================================================================
-    console.log(`[Sync] Backing up MongoDB "post" collection to Supabase "${targetTable}"...`);
+    console.log(`[Sync] Backing up MongoDB "posts" collection to Supabase "${targetTable}"...`);
     let totalBackedUpToSupabase = 0;
 
-    const allMongoPosts = await PostModel.find({}, { title: 1, video_url: 1, thumbnail_url: 1, created_at: 1 }).lean();
+    if (targetTable === 'viralhub_db') {
+      const migRes = await migrateMongoToSupabase();
+      totalBackedUpToSupabase = migRes.successCount;
+    } else {
+      const allMongoPosts = await PostModel.find({}, { title: 1, video_url: 1, thumbnail_url: 1, created_at: 1 }).lean();
+      const BACKUP_CHUNK_SIZE = 250;
+      for (let i = 0; i < allMongoPosts.length; i += BACKUP_CHUNK_SIZE) {
+        const chunk = allMongoPosts.slice(i, i + BACKUP_CHUNK_SIZE);
+        const backupPayload = chunk
+          .filter(item => Boolean(item.video_url))
+          .map(item => ({
+            title: item.title || 'Untitled Video',
+            video_url: item.video_url,
+            thumbnail_url: item.thumbnail_url || null,
+          }));
 
-    const BACKUP_CHUNK_SIZE = 250;
-    for (let i = 0; i < allMongoPosts.length; i += BACKUP_CHUNK_SIZE) {
-      const chunk = allMongoPosts.slice(i, i + BACKUP_CHUNK_SIZE);
-      const backupPayload = chunk
-        .filter(item => Boolean(item.video_url))
-        .map(item => ({
-          title: item.title || 'Untitled Video',
-          video_url: item.video_url,
-          thumbnail_url: item.thumbnail_url || null,
-        }));
+        if (backupPayload.length > 0) {
+          const { error: backupError } = await supabaseClient
+            .from(targetTable)
+            .upsert(backupPayload, { onConflict: 'video_url', ignoreDuplicates: true });
 
-      if (backupPayload.length > 0) {
-        const { error: backupError } = await supabaseClient
-          .from(targetTable)
-          .upsert(backupPayload, { onConflict: 'video_url', ignoreDuplicates: true });
-
-        if (backupError) {
-          console.warn(`[Sync] Supabase backup chunk error (${targetTable}):`, backupError.message);
-          // If public.post doesn't exist, we log notice
-          if (backupError.code === 'PGRST205' || backupError.message?.includes('schema cache')) {
-            break;
+          if (!backupError) {
+            totalBackedUpToSupabase += backupPayload.length;
           }
-        } else {
-          totalBackedUpToSupabase += backupPayload.length;
         }
       }
     }
@@ -437,10 +606,19 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
 }
 
 /**
- * Detect whether Supabase uses 'post' or 'posts' table
+ * Detect whether Supabase uses 'viralhub_db', 'post', or 'posts' table
  */
 export async function detectTargetTable(client: SupabaseClient): Promise<string> {
   try {
+    const { data: vData, error: vError } = await client
+      .from('viralhub_db')
+      .select('id')
+      .limit(1);
+
+    if (!vError && vData) {
+      return 'viralhub_db';
+    }
+
     const { data: testData, error: testError } = await client
       .from('post')
       .select('id')
@@ -457,7 +635,7 @@ export async function detectTargetTable(client: SupabaseClient): Promise<string>
       }
     }
   } catch {}
-  return 'post';
+  return 'viralhub_db';
 }
 
 export type PostMutationAction = 'add' | 'delete';
