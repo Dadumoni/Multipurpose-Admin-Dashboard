@@ -30,6 +30,24 @@ export function generateSafeSlug(doc: Record<string, any>): string {
   return slugifyText(combinedText);
 }
 
+export function sanitizeThumbnailPath(url: any): string | null {
+  if (!url) return null;
+  const str = String(url).trim();
+  if (!str) return null;
+  // If full R2 dev URL or public URL, extract /thumbnails/...
+  const r2Match = str.match(/https?:\/\/[^/]+(\/thumbnails\/.*)$/i);
+  if (r2Match) {
+    return r2Match[1];
+  }
+  if (str.startsWith('/thumbnails/')) {
+    return str;
+  }
+  if (str.startsWith('thumbnails/')) {
+    return `/${str}`;
+  }
+  return str;
+}
+
 function parseToUnixSeconds(val: any): number | null {
   if (val === undefined || val === null || val === '') return null;
   if (typeof val === 'number') {
@@ -280,7 +298,7 @@ export async function migrateMongoToSupabase(): Promise<{
         domain: rawDoc.domain || null,
         duration: rawDoc.duration || null,
         scraped_at: parseToUnixSeconds(rawDoc.scraped_at) || parseToUnixSeconds(rawDoc.created_at) || null,
-        thumbnail_url: rawDoc.thumbnail_url || null,
+        thumbnail_url: sanitizeThumbnailPath(rawDoc.thumbnail_url),
         views: Number(rawDoc.views) || 0,
         updated_at: parseToUnixMs(rawDoc.updated_at) || Date.now(),
         site: rawDoc.site || rawDoc.domain || null,
@@ -557,7 +575,7 @@ export async function runSync(options?: { customUrl?: string; customKey?: string
           .map(item => ({
             title: item.title || 'Untitled Video',
             video_url: item.video_url,
-            thumbnail_url: item.thumbnail_url || null,
+            thumbnail_url: sanitizeThumbnailPath(item.thumbnail_url),
           }));
 
         if (backupPayload.length > 0) {

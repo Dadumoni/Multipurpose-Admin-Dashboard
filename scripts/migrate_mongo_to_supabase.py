@@ -34,6 +34,21 @@ def generate_safe_slug(doc: dict) -> str:
     combined_text = f"{title}-{video_id}" if video_id else title
     return slugify(combined_text)
 
+def sanitize_thumbnail_path(url):
+    if not url:
+        return None
+    url_str = str(url).strip()
+    if not url_str:
+        return None
+    match = re.search(r'https?://[^/]+(/thumbnails/.*)$', url_str, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    if url_str.startswith('/thumbnails/'):
+        return url_str
+    if url_str.startswith('thumbnails/'):
+        return f"/{url_str}"
+    return url_str
+
 def parse_to_unix_seconds(val):
     if val is None or val == "":
         return None
@@ -199,7 +214,7 @@ def migrate_data():
                 "domain": doc.get("domain") or None,
                 "duration": doc.get("duration") or None,
                 "scraped_at": parse_to_unix_seconds(doc.get("scraped_at")) or parse_to_unix_seconds(doc.get("created_at")),
-                "thumbnail_url": doc.get("thumbnail_url") or None,
+                "thumbnail_url": sanitize_thumbnail_path(doc.get("thumbnail_url")),
                 "views": int(doc.get("views") or 0),
                 "updated_at": parse_to_unix_ms(doc.get("updated_at")),
                 "site": doc.get("site") or doc.get("domain") or None,
