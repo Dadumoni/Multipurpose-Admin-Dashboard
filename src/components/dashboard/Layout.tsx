@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Settings as SettingsIcon, 
   Film, 
+  Video,
   Upload, 
   Folder, 
   HardDrive, 
@@ -64,7 +65,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { icon: Globe, label: 'Site Scraper', href: '/scrapers' },
     { icon: Bot, label: 'Telegram Bot', href: '/telegram-bot' },
     { icon: Terminal, label: 'Logs', href: '/logs' },
-    { icon: SettingsIcon, label: 'Settings', href: '/settings' },
+    { icon: Video, label: 'R2 Videos', href: '/r2-videos' },
   ];
 
   const currentLabel = menuItems.find(i => i.href === location.pathname)?.label || 'Overview';

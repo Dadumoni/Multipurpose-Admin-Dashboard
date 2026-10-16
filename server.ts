@@ -1661,6 +1661,110 @@ async function startServer() {
     }
   });
 
+  // ============================================================
+  // R2 VIDEOS (all_videos_db from Supabase)
+  // ============================================================
+  app.get('/api/r2-videos', async (req, res) => {
+    try {
+      const sb = getSupabaseBackupClient();
+      if (!sb) {
+        return res.status(503).json({ error: 'Supabase client not configured' });
+      }
+
+      const search = (req.query.search as string || '').trim();
+      const sort = (req.query.sort as string) || 'date_desc';
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string) || 24));
+      const offset = (page - 1) * limit;
+
+      let query = sb.from('all_videos_db').select('*', { count: 'exact' });
+
+      if (search) {
+        query = query.or(`title.ilike.%${search}%,slug.ilike.%${search}%`);
+      }
+
+      if (sort === 'date_asc') {
+        query = query.order('id', { ascending: true });
+      } else if (sort === 'views_desc') {
+        query = query.order('views', { ascending: false });
+      } else if (sort === 'title_asc') {
+        query = query.order('title', { ascending: true });
+      } else {
+        query = query.order('id', { ascending: false });
+      }
+
+      query = query.range(offset, offset + limit - 1);
+
+      const { data: videos, count, error } = await query;
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+
+      // Calculate total views and total count
+      let totalViews = 0;
+      const { data: viewsData } = await sb.from('all_videos_db').select('views');
+      if (viewsData && Array.isArray(viewsData)) {
+        totalViews = viewsData.reduce((acc, row) => acc + (Number(row.views) || 0), 0);
+      }
+
+      const totalVideosCount = count !== null ? count : (videos ? videos.length : 0);
+
+      res.json({
+        success: true,
+        videos: videos || [],
+        totalCount: totalVideosCount,
+        totalViews,
+        page,
+        limit,
+        totalPages: Math.ceil((count || 0) / limit)
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Internal error' });
+    }
+  });
+
+  app.patch('/api/r2-videos/:id', async (req, res) => {
+    try {
+      const sb = getSupabaseBackupClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase not configured' });
+      const { id } = req.params;
+      const { title } = req.body;
+      if (!title || typeof title !== 'string') {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+
+      const { data, error } = await sb
+        .from('all_videos_db')
+        .update({ title: title.trim() })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true, video: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/r2-videos/:id', async (req, res) => {
+    try {
+      const sb = getSupabaseBackupClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase not configured' });
+      const { id } = req.params;
+
+      const { error } = await sb
+        .from('all_videos_db')
+        .delete()
+        .eq('id', id);
+
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true, message: `Video #${id} deleted` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 5. GET /api/uploaded-videos - List uploaded videos from MongoDB
   app.get('/api/uploaded-videos', async (_req, res) => {
     try {
