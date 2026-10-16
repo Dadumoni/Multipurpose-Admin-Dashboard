@@ -2039,9 +2039,33 @@ async function startServer() {
       const totalScraped = dashboardStats?.total_posts || 0;
       const totalUploaded = dashboardStats?.total_uploaded || 0;
       const totalVideos = dashboardStats?.total_videos || (totalScraped + totalUploaded);
-      const totalViews = dashboardStats?.total_views || 0;
       const videoSources = dashboardStats?.video_sources || [];
       const recentPosts = dashboardStats?.recent_posts || [];
+
+      // Query Supabase for authoritative total views and visitor daily views
+      const sb = getSupabaseBackupClient();
+      let supabaseTotalViews = 0;
+      let supabaseVisitorViewsRows: any[] = [];
+
+      if (sb) {
+        try {
+          const [viralhubRes, vvRes] = await Promise.all([
+            sb.from('viralhub_db').select('views'),
+            sb.from('visitor_views').select('created_at, updated_at, view_counted').limit(10000),
+          ]);
+
+          if (viralhubRes.data && Array.isArray(viralhubRes.data)) {
+            supabaseTotalViews = viralhubRes.data.reduce((acc: number, r: any) => acc + (Number(r.views) || 0), 0);
+          }
+          if (vvRes.data && Array.isArray(vvRes.data)) {
+            supabaseVisitorViewsRows = vvRes.data;
+          }
+        } catch (sbErr) {
+          console.warn('Error fetching Supabase overview views:', sbErr);
+        }
+      }
+
+      const totalViews = supabaseTotalViews > 0 ? supabaseTotalViews : (dashboardStats?.total_views || 0);
 
       // Target month boundaries
       const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
@@ -2074,6 +2098,20 @@ async function startServer() {
       }
       for (const item of uploadedDailyAgg) {
         dailyViewsMap[item._id] = (dailyViewsMap[item._id] || 0) + (item.views || 0);
+      }
+
+      // Merge real daily view events from Supabase visitor_views for target month
+      if (supabaseVisitorViewsRows.length > 0) {
+        for (const r of supabaseVisitorViewsRows) {
+          const t = r.updated_at || r.created_at;
+          if (t) {
+            const d = new Date(t);
+            if (d.getUTCFullYear() === targetYear && d.getUTCMonth() === targetMonth) {
+              const day = d.getUTCDate();
+              dailyViewsMap[day] = (dailyViewsMap[day] || 0) + 1;
+            }
+          }
+        }
       }
 
       // Return 0 for dates with no activity
@@ -2228,11 +2266,71 @@ async function startServer() {
               ? new Date(rowTime) >= startOfMonth && new Date(rowTime) <= endOfMonth
               : true;
 
+            const normalizeDevice = (val: string) => {
+              if (!val) return 'Desktop';
+              const o = val.toLowerCase();
+              if (o.includes('win')) return 'Windows';
+              if (o.includes('android')) return 'Android';
+              if (o.includes('ios') || o.includes('iphone') || o.includes('ipad')) return 'iOS';
+              if (o.includes('mac')) return 'macOS';
+              if (o.includes('linux')) return 'Linux';
+              return val.trim() || 'Desktop';
+            };
+
+            const normalizeCountry = (val: string) => {
+              if (!val) return 'Unknown';
+              const trimmed = val.trim();
+              const code = trimmed.split(/[, -]/)[0].trim().toUpperCase();
+              const countryMap: Record<string, string> = {
+                IN: 'India',
+                US: 'United States',
+                BD: 'Bangladesh',
+                PK: 'Pakistan',
+                GB: 'United Kingdom',
+                UK: 'United Kingdom',
+                CA: 'Canada',
+                AU: 'Australia',
+                DE: 'Germany',
+                FR: 'France',
+                NP: 'Nepal',
+                AE: 'United Arab Emirates',
+                SA: 'Saudi Arabia',
+                RU: 'Russia',
+                BR: 'Brazil',
+                ID: 'Indonesia',
+                PH: 'Philippines',
+                MY: 'Malaysia',
+                SG: 'Singapore',
+              };
+              if (countryMap[code]) return countryMap[code];
+              if (countryMap[trimmed.toUpperCase()]) return countryMap[trimmed.toUpperCase()];
+              if (trimmed.includes(',')) {
+                const parts = trimmed.split(',').map(s => s.trim());
+                if (parts[0].length === 2 && countryMap[parts[0].toUpperCase()]) {
+                  return countryMap[parts[0].toUpperCase()];
+                }
+              }
+              return trimmed;
+            };
+
+            const normalizeBrowser = (val: string) => {
+              if (!val) return 'Chrome';
+              const b = val.toLowerCase();
+              if (b.includes('telegram')) return 'Telegram In-App';
+              if (b.includes('brave') || b.includes('ucbrowser') || b.includes('uc browser')) return 'Brave / UC Browser';
+              if (b.includes('firefox') || b.includes('fxios')) return 'Firefox / Edge';
+              if (b.includes('edge') || b.includes('edg')) return 'Firefox / Edge';
+              if (b.includes('safari') && !b.includes('chrome')) return 'Safari';
+              if (b.includes('chrome') || b.includes('crios')) return 'Chrome';
+              if (b.includes('opera') || b.includes('opr')) return 'Opera';
+              return val.trim() || 'Chrome';
+            };
+
             if (isMatchMonth) {
               monthMatchingRows++;
-              const os = (row.os || 'Desktop').trim();
-              const country = (row.country || 'Unknown').trim();
-              const browser = (row.browser || 'Chrome').trim();
+              const os = normalizeDevice(row.os);
+              const country = normalizeCountry(row.country);
+              const browser = normalizeBrowser(row.browser);
 
               osCount[os] = (osCount[os] || 0) + 1;
               countryCount[country] = (countryCount[country] || 0) + 1;
@@ -2244,9 +2342,9 @@ async function startServer() {
           const baseCount = monthMatchingRows > 0 ? monthMatchingRows : supabaseVisitors.length;
           if (monthMatchingRows === 0) {
             for (const row of supabaseVisitors) {
-              const os = (row.os || 'Desktop').trim();
-              const country = (row.country || 'Unknown').trim();
-              const browser = (row.browser || 'Chrome').trim();
+              const os = normalizeDevice(row.os);
+              const country = normalizeCountry(row.country);
+              const browser = normalizeBrowser(row.browser);
 
               osCount[os] = (osCount[os] || 0) + 1;
               countryCount[country] = (countryCount[country] || 0) + 1;

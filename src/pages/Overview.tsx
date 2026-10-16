@@ -15,7 +15,10 @@ import {
   ChevronRight,
   Smartphone,
   Globe,
-  Compass
+  Compass,
+  Shield,
+  Flame,
+  Send
 } from 'lucide-react';
 import { 
   LineChart,
@@ -25,14 +28,31 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  BarChart,
-  Bar
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { useTheme } from '@/src/components/ThemeProvider';
 import { cn } from '@/src/lib/utils';
 import { toast } from 'sonner';
+
+// Device breakdown palette matching user reference image: #bbf7f9, #e6739f, #fef08a, #d9c814, #be185d
+const DEVICE_COLORS = ['#bbf7f9', '#e6739f', '#fef08a', '#d9c814', '#be185d', '#8b5cf6'];
+
+// Top countries pill progress bar colors matching user reference image
+const COUNTRY_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#64748b'];
+
+function getBrowserIcon(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.includes('chrome')) return <Globe className="h-4 w-4 text-sky-500 shrink-0" />;
+  if (lower.includes('telegram') || lower.includes('in-app')) return <Send className="h-4 w-4 text-blue-400 shrink-0" />;
+  if (lower.includes('safari')) return <Compass className="h-4 w-4 text-amber-500 shrink-0" />;
+  if (lower.includes('brave') || lower.includes('uc')) return <Shield className="h-4 w-4 text-orange-500 shrink-0" />;
+  if (lower.includes('firefox') || lower.includes('edge')) return <Flame className="h-4 w-4 text-rose-500 shrink-0" />;
+  return <Globe className="h-4 w-4 text-zinc-400 shrink-0" />;
+}
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -558,9 +578,9 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* VISITORS ANALYTICS CARDS (Device Breakdown & Country Breakdown) */}
+      {/* VISITORS ANALYTICS CARDS (Device Breakdown & Top Countries by Views) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Card 1: Device Breakdown (Replaces Views in Last 7 Days) */}
+        {/* Card 1: Device Breakdown (Circular Chart matching reference image) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -597,34 +617,88 @@ export default function Overview() {
               No device records recorded for {selectedMonthLabel}.
             </div>
           ) : (
-            <div className="h-[230px] flex flex-col justify-center space-y-3">
-              {visitors.devices.map((device) => (
-                <div key={device.name} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">{device.name}</span>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-2">
+              <div className="h-[200px] w-[200px] shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={visitors.devices}
+                      dataKey="count"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      innerRadius={0}
+                      label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+                        if (percent < 0.05) return null;
+                        const RADIAN = Math.PI / 180;
+                        const radius = innerRadius + (outerRadius - innerRadius) * 0.58;
+                        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                        return (
+                          <text
+                            x={x}
+                            y={y}
+                            fill="#292524"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            className="text-xs font-bold"
+                          >
+                            {`${Math.round(percent * 100)}%`}
+                          </text>
+                        );
+                      }}
+                      labelLine={false}
+                      stroke={isDark ? '#09090b' : '#ffffff'}
+                      strokeWidth={2}
+                    >
+                      {visitors.devices.map((_entry, index) => (
+                        <Cell key={`cell-${index}`} fill={DEVICE_COLORS[index % DEVICE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: isDark ? '#000000' : '#ffffff',
+                        borderColor: isDark ? '#27272a' : '#e4e4e7',
+                        color: isDark ? '#ffffff' : '#000000',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                      }}
+                      formatter={(val: any, name: any) => [`${val} visitors`, name]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Legend with matching colors */}
+              <div className="flex-1 w-full space-y-2.5">
+                {visitors.devices.map((device, index) => (
+                  <div key={device.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-3 w-3 rounded-full shrink-0 shadow-sm"
+                        style={{ backgroundColor: DEVICE_COLORS[index % DEVICE_COLORS.length] }}
+                      />
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">{device.name}</span>
+                    </div>
                     <span className="font-mono text-zinc-500 dark:text-zinc-400">
                       {device.count.toLocaleString()} ({device.percentage}%)
                     </span>
                   </div>
-                  <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-black dark:bg-white rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, Math.max(5, device.percentage))}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Card 2: Country Breakdown (Replaces Content Ratio) */}
+        {/* Card 2: Top Countries by Views (Progress Bar Card Layout matching reference image) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="flex items-center gap-2">
                 <Globe className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-                <h3 className="text-sm font-semibold text-black dark:text-white">Country Breakdown</h3>
+                <h3 className="text-sm font-semibold text-black dark:text-white">Top Countries by Views</h3>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                 View distribution by geographic region for {selectedMonthLabel}.
@@ -655,20 +729,27 @@ export default function Overview() {
               No country view records found for {selectedMonthLabel}.
             </div>
           ) : (
-            <div className="h-[230px] flex flex-col justify-center space-y-3">
-              {visitors.countries.slice(0, 5).map((country) => (
-                <div key={country.name} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">{country.name}</span>
-                    <span className="font-mono text-zinc-500 dark:text-zinc-400">
-                      {country.count.toLocaleString()} ({country.percentage}%)
-                    </span>
-                  </div>
-                  <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-[230px] flex flex-col justify-center space-y-3.5">
+              {visitors.countries.slice(0, 6).map((country, index) => (
+                <div key={country.name} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="w-28 sm:w-36 truncate font-medium text-zinc-800 dark:text-zinc-200 shrink-0">
+                    {country.name}
+                  </span>
+
+                  {/* Rounded pill progress bar matching reference image 3 */}
+                  <div className="flex-1 h-3 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-black dark:bg-white rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, Math.max(5, country.percentage))}%` }}
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(6, country.percentage))}%`,
+                        backgroundColor: COUNTRY_COLORS[index % COUNTRY_COLORS.length]
+                      }}
                     />
+                  </div>
+
+                  <div className="font-mono text-zinc-600 dark:text-zinc-300 text-right w-24 shrink-0">
+                    <span className="font-semibold text-black dark:text-white">{country.count.toLocaleString()}</span>{' '}
+                    <span className="text-zinc-500 dark:text-zinc-400">({country.percentage}%)</span>
                   </div>
                 </div>
               ))}
@@ -677,21 +758,25 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* Card 3: Browser Usage (New Analytics Card below) */}
+      {/* Card 3: Top Browsers (Progress Bar Card Layout with icons matching reference image) */}
       <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
               <Compass className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-              <h3 className="text-sm font-semibold text-black dark:text-white">Browser Usage</h3>
+              <h3 className="text-sm font-semibold text-black dark:text-white">Top Browsers</h3>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Traffic distribution across web and mobile browsers (Chrome, Safari, Firefox, Edge) for {selectedMonthLabel}.
+              Traffic by browser &amp; in-app webviews
             </p>
           </div>
           {visitors.available && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium">
-              Live
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300">
+              [ Web: {(() => {
+                const inApp = visitors.browsers.find(b => b.name.toLowerCase().includes('in-app') || b.name.toLowerCase().includes('telegram'))?.count || 0;
+                const total = visitors.browsers.reduce((acc, b) => acc + b.count, 0);
+                return total > 0 ? (((total - inApp) / total) * 100).toFixed(1) : '100.0';
+              })()}% ]
             </span>
           )}
         </div>
@@ -714,27 +799,28 @@ export default function Overview() {
             No browser telemetry recorded for {selectedMonthLabel}.
           </div>
         ) : (
-          <div className="h-[180px] w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={visitors.browsers} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? '#27272a' : '#f4f4f5'} />
-                <XAxis dataKey="name" stroke={isDark ? '#a1a1aa' : '#71717a'} fontSize={11} tickLine={false} />
-                <YAxis stroke={isDark ? '#a1a1aa' : '#71717a'} fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: isDark ? '#000000' : '#ffffff', 
-                    borderColor: isDark ? '#27272a' : '#e4e4e7', 
-                    color: isDark ? '#ffffff' : '#000000',
-                    borderRadius: '8px', 
-                    fontSize: '12px' 
-                  }}
-                  itemStyle={{ color: isDark ? '#ffffff' : '#000000' }}
-                  labelStyle={{ color: isDark ? '#a1a1aa' : '#71717a' }}
-                  formatter={(val: any) => [`${val} visitors`, 'Count']}
-                />
-                <Bar dataKey="count" fill={isDark ? '#ffffff' : '#000000'} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="space-y-3 pt-2">
+            {visitors.browsers.slice(0, 5).map((browser) => (
+              <div key={browser.name} className="flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5 w-40 sm:w-48 shrink-0">
+                  {getBrowserIcon(browser.name)}
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200 truncate">{browser.name}</span>
+                </div>
+
+                {/* Horizontal progress bar matching image 4 */}
+                <div className="flex-1 h-3.5 bg-zinc-100 dark:bg-zinc-800/80 rounded overflow-hidden">
+                  <div 
+                    className="h-full bg-zinc-800 dark:bg-zinc-200 rounded transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(5, browser.percentage))}%` }}
+                  />
+                </div>
+
+                <div className="font-mono text-zinc-600 dark:text-zinc-300 text-right w-28 shrink-0">
+                  <span className="font-semibold text-black dark:text-white">{browser.count.toLocaleString()}</span>{' '}
+                  <span className="text-zinc-500 dark:text-zinc-400">({browser.percentage}%)</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
