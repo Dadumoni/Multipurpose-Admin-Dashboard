@@ -54,6 +54,8 @@ interface TrendInfo {
 interface VisitorsData {
   available: boolean;
   message: string;
+  totalUsers?: number;
+  totalOnline?: number;
   devices: { name: string; count: number; percentage: number }[];
   countries: { name: string; count: number; percentage: number }[];
   browsers: { name: string; count: number; percentage: number }[];
@@ -114,6 +116,8 @@ export default function Overview() {
   const [visitors, setVisitors] = useState<VisitorsData>({
     available: false,
     message: '',
+    totalUsers: 0,
+    totalOnline: 0,
     devices: [],
     countries: [],
     browsers: [],
@@ -127,6 +131,33 @@ export default function Overview() {
   useEffect(() => {
     fetchOverviewData(selectedYear, selectedMonth);
   }, [selectedYear, selectedMonth]);
+
+  // Periodic poll for realtime online users and total users every 20 seconds
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRealtime = async () => {
+      try {
+        const res = await fetch('/api/overview/realtime');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success) {
+            setVisitors((prev) => ({
+              ...prev,
+              totalUsers: typeof data.totalUsers === 'number' ? data.totalUsers : prev.totalUsers,
+              totalOnline: typeof data.totalOnline === 'number' ? data.totalOnline : prev.totalOnline,
+              available: true,
+            }));
+          }
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(fetchRealtime, 20000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   async function handleRecalculateStats() {
     if (isRecalculating) return;
@@ -264,10 +295,33 @@ export default function Overview() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Manage your video content and performance.</p>
         </div>
 
-        {/* Dynamic Month Header Badge (top-right badge shows current month/year dynamically) */}
-        <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-          <Calendar className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
-          <span>{format(new Date(), 'MMMM yyyy')}</span>
+        {/* Badges opposite of Overview: Month + Total Users {total ips} + Total Online */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Box 1: Dynamic Month Header Badge (October) */}
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            <Calendar className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
+            <span>{format(new Date(), 'MMMM yyyy')}</span>
+          </div>
+
+          {/* Box 2: Total Users {Total IPs} */}
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            <Users className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
+            <span>
+              Total Users: <strong className="font-semibold text-black dark:text-white font-mono">{visitors.totalUsers ?? 0}</strong>{' '}
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">({visitors.totalUsers ?? 0} IPs)</span>
+            </span>
+          </div>
+
+          {/* Box 3: Total Online (Realtime Active Visitors) */}
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>
+              Online: <strong className="font-semibold text-emerald-600 dark:text-emerald-400 font-mono">{visitors.totalOnline ?? 0}</strong>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -532,10 +586,10 @@ export default function Overview() {
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Visitors Collection Not Found
+                Visitor Telemetry Unavailable
               </span>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[280px]">
-                The <code className="font-mono text-zinc-700 dark:text-zinc-300">visitors</code> collection does not exist in MongoDB. Device telemetry is unavailable.
+                {visitors.message || 'No visitor records recorded yet in visitor_views.'}
               </p>
             </div>
           ) : visitors.devices.length === 0 ? (
@@ -590,10 +644,10 @@ export default function Overview() {
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Visitors Collection Not Found
+                Visitor Telemetry Unavailable
               </span>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[280px]">
-                The <code className="font-mono text-zinc-700 dark:text-zinc-300">visitors</code> collection does not exist in MongoDB. Geographic view metrics are unavailable.
+                {visitors.message || 'No geographic visitor view records recorded yet in visitor_views.'}
               </p>
             </div>
           ) : visitors.countries.length === 0 ? (
@@ -649,10 +703,10 @@ export default function Overview() {
               <AlertTriangle className="h-5 w-5" />
             </div>
             <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-              Visitors Collection Not Found
+              Visitor Telemetry Unavailable
             </span>
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[320px]">
-              The <code className="font-mono text-zinc-700 dark:text-zinc-300">visitors</code> collection does not exist in MongoDB. Browser analytics are unavailable.
+              {visitors.message || 'No browser telemetry recorded yet in visitor_views.'}
             </p>
           </div>
         ) : visitors.browsers.length === 0 ? (

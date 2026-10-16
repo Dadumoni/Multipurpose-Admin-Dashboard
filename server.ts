@@ -2175,71 +2175,171 @@ async function startServer() {
         };
       }
 
-      // Check if 'visitors' collection exists in MongoDB
+      // Check visitor views from Supabase 'visitor_views' table (with fallback to MongoDB 'visitors')
       let visitorsData = {
         available: false,
-        message: "Collection 'visitors' does not exist in MongoDB.",
+        message: 'No visitor data available yet.',
+        totalUsers: 0,
+        totalOnline: 0,
         devices: [] as { name: string; count: number; percentage: number }[],
         countries: [] as { name: string; count: number; percentage: number }[],
         browsers: [] as { name: string; count: number; percentage: number }[],
       };
 
       try {
-        const collections = await mongoose.connection.db?.listCollections({ name: 'visitors' }).toArray();
-        const hasVisitorsCollection = Boolean(collections && collections.length > 0);
+        const sb = getSupabaseBackupClient();
+        let supabaseVisitors: any[] | null = null;
 
-        if (hasVisitorsCollection && mongoose.connection.db) {
-          const visitorsCol = mongoose.connection.db.collection('visitors');
-          const [deviceAgg, countryAgg, browserAgg] = await Promise.all([
-            visitorsCol.aggregate([
-              { $match: { $or: [{ visited_at: { $gte: startOfMonth, $lte: endOfMonth } }, { created_at: { $gte: startOfMonth, $lte: endOfMonth } }] } },
-              { $group: { _id: '$device', count: { $sum: 1 } } },
-              { $sort: { count: -1 } }
-            ]).toArray(),
-            visitorsCol.aggregate([
-              { $match: { $or: [{ visited_at: { $gte: startOfMonth, $lte: endOfMonth } }, { created_at: { $gte: startOfMonth, $lte: endOfMonth } }] } },
-              { $group: { _id: '$country', count: { $sum: 1 } } },
-              { $sort: { count: -1 } }
-            ]).toArray(),
-            visitorsCol.aggregate([
-              { $match: { $or: [{ visited_at: { $gte: startOfMonth, $lte: endOfMonth } }, { created_at: { $gte: startOfMonth, $lte: endOfMonth } }] } },
-              { $group: { _id: '$browser', count: { $sum: 1 } } },
-              { $sort: { count: -1 } }
-            ]).toArray(),
-          ]);
+        if (sb) {
+          const { data: vvData, error: vvErr } = await sb
+            .from('visitor_views')
+            .select('ip, os, browser, country, created_at, updated_at')
+            .order('created_at', { ascending: false })
+            .limit(10000);
 
-          const totalDevCount = deviceAgg.reduce((acc, d) => acc + (d.count || 0), 0);
-          const totalCountryCount = countryAgg.reduce((acc, c) => acc + (c.count || 0), 0);
-          const totalBrowserCount = browserAgg.reduce((acc, b) => acc + (b.count || 0), 0);
+          if (!vvErr && Array.isArray(vvData) && vvData.length > 0) {
+            supabaseVisitors = vvData;
+          }
+        }
+
+        if (supabaseVisitors && supabaseVisitors.length > 0) {
+          const uniqueIps = new Set<string>();
+          const onlineIps = new Set<string>();
+          // Active in the last 15 minutes = Online
+          const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+          // Collect metrics for selected month
+          const osCount: Record<string, number> = {};
+          const countryCount: Record<string, number> = {};
+          const browserCount: Record<string, number> = {};
+          let monthMatchingRows = 0;
+
+          for (const row of supabaseVisitors) {
+            if (row.ip) {
+              uniqueIps.add(row.ip);
+              const activityTime = row.updated_at || row.created_at;
+              if (activityTime && activityTime >= fifteenMinutesAgo) {
+                onlineIps.add(row.ip);
+              }
+            }
+
+            const rowTime = row.created_at || row.updated_at;
+            const isMatchMonth = rowTime
+              ? new Date(rowTime) >= startOfMonth && new Date(rowTime) <= endOfMonth
+              : true;
+
+            if (isMatchMonth) {
+              monthMatchingRows++;
+              const os = (row.os || 'Desktop').trim();
+              const country = (row.country || 'Unknown').trim();
+              const browser = (row.browser || 'Chrome').trim();
+
+              osCount[os] = (osCount[os] || 0) + 1;
+              countryCount[country] = (countryCount[country] || 0) + 1;
+              browserCount[browser] = (browserCount[browser] || 0) + 1;
+            }
+          }
+
+          // If no rows matched target month specifically, fallback to overall distribution
+          const baseCount = monthMatchingRows > 0 ? monthMatchingRows : supabaseVisitors.length;
+          if (monthMatchingRows === 0) {
+            for (const row of supabaseVisitors) {
+              const os = (row.os || 'Desktop').trim();
+              const country = (row.country || 'Unknown').trim();
+              const browser = (row.browser || 'Chrome').trim();
+
+              osCount[os] = (osCount[os] || 0) + 1;
+              countryCount[country] = (countryCount[country] || 0) + 1;
+              browserCount[browser] = (browserCount[browser] || 0) + 1;
+            }
+          }
+
+          const devices = Object.entries(osCount)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({
+              name,
+              count,
+              percentage: baseCount > 0 ? Math.round((count / baseCount) * 100) : 0,
+            }));
+
+          const countries = Object.entries(countryCount)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({
+              name,
+              count,
+              percentage: baseCount > 0 ? Math.round((count / baseCount) * 100) : 0,
+            }));
+
+          const browsers = Object.entries(browserCount)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({
+              name,
+              count,
+              percentage: baseCount > 0 ? Math.round((count / baseCount) * 100) : 0,
+            }));
 
           visitorsData = {
             available: true,
             message: '',
-            devices: deviceAgg.map(d => ({
-              name: d._id || 'Desktop',
-              count: d.count || 0,
-              percentage: totalDevCount > 0 ? Math.round(((d.count || 0) / totalDevCount) * 100) : 0,
-            })),
-            countries: countryAgg.map(c => ({
-              name: c._id || 'Unknown',
-              count: c.count || 0,
-              percentage: totalCountryCount > 0 ? Math.round(((c.count || 0) / totalCountryCount) * 100) : 0,
-            })),
-            browsers: browserAgg.map(b => ({
-              name: b._id || 'Chrome',
-              count: b.count || 0,
-              percentage: totalBrowserCount > 0 ? Math.round(((b.count || 0) / totalBrowserCount) * 100) : 0,
-            })),
+            totalUsers: uniqueIps.size,
+            totalOnline: onlineIps.size,
+            devices,
+            countries,
+            browsers,
           };
+        } else {
+          // Fallback to MongoDB 'visitors' collection
+          const collections = await mongoose.connection.db?.listCollections({ name: 'visitors' }).toArray();
+          const hasVisitorsCollection = Boolean(collections && collections.length > 0);
+
+          if (hasVisitorsCollection && mongoose.connection.db) {
+            const visitorsCol = mongoose.connection.db.collection('visitors');
+            const [deviceAgg, countryAgg, browserAgg, allIps, onlineIps] = await Promise.all([
+              visitorsCol.aggregate([
+                { $group: { _id: '$device', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+              ]).toArray(),
+              visitorsCol.aggregate([
+                { $group: { _id: '$country', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+              ]).toArray(),
+              visitorsCol.aggregate([
+                { $group: { _id: '$browser', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+              ]).toArray(),
+              visitorsCol.distinct('ip'),
+              visitorsCol.distinct('ip', { visited_at: { $gte: new Date(Date.now() - 15 * 60 * 1000) } }),
+            ]);
+
+            const totalDevCount = deviceAgg.reduce((acc, d) => acc + (d.count || 0), 0);
+            const totalCountryCount = countryAgg.reduce((acc, c) => acc + (c.count || 0), 0);
+            const totalBrowserCount = browserAgg.reduce((acc, b) => acc + (b.count || 0), 0);
+
+            visitorsData = {
+              available: true,
+              message: '',
+              totalUsers: allIps.length || 0,
+              totalOnline: onlineIps.length || 0,
+              devices: deviceAgg.map(d => ({
+                name: d._id || 'Desktop',
+                count: d.count || 0,
+                percentage: totalDevCount > 0 ? Math.round(((d.count || 0) / totalDevCount) * 100) : 0,
+              })),
+              countries: countryAgg.map(c => ({
+                name: c._id || 'Unknown',
+                count: c.count || 0,
+                percentage: totalCountryCount > 0 ? Math.round(((c.count || 0) / totalCountryCount) * 100) : 0,
+              })),
+              browsers: browserAgg.map(b => ({
+                name: b._id || 'Chrome',
+                count: b.count || 0,
+                percentage: totalBrowserCount > 0 ? Math.round(((b.count || 0) / totalBrowserCount) * 100) : 0,
+              })),
+            };
+          }
         }
       } catch (visitorErr: any) {
-        visitorsData = {
-          available: false,
-          message: `Unable to access visitors collection: ${visitorErr?.message || 'Database error'}`,
-          devices: [],
-          countries: [],
-          browsers: [],
-        };
+        console.warn('Error fetching visitor stats:', visitorErr);
       }
 
       const responsePayload = {
@@ -2270,6 +2370,46 @@ async function startServer() {
     } catch (error: any) {
       console.error('Failed to calculate MongoDB overview stats:', error);
       res.status(500).json({ error: error.message || 'Failed to calculate overview stats' });
+    }
+  });
+
+  // GET /api/overview/realtime - Live realtime online active users and total users from visitor_views
+  app.get('/api/overview/realtime', async (_req, res) => {
+    try {
+      const sb = getSupabaseBackupClient();
+      if (!sb) {
+        return res.json({ success: true, totalUsers: 0, totalOnline: 0 });
+      }
+
+      const { data, error } = await sb
+        .from('visitor_views')
+        .select('ip, created_at, updated_at');
+
+      if (error || !Array.isArray(data)) {
+        return res.json({ success: true, totalUsers: 0, totalOnline: 0 });
+      }
+
+      const uniqueIps = new Set<string>();
+      const onlineIps = new Set<string>();
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+      for (const row of data) {
+        if (row.ip) {
+          uniqueIps.add(row.ip);
+          const activityTime = row.updated_at || row.created_at;
+          if (activityTime && activityTime >= fifteenMinutesAgo) {
+            onlineIps.add(row.ip);
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        totalUsers: uniqueIps.size,
+        totalOnline: onlineIps.size,
+      });
+    } catch (e: any) {
+      return res.json({ success: false, totalUsers: 0, totalOnline: 0 });
     }
   });
 
