@@ -101,20 +101,19 @@ def init_connections():
 
 def fetch_existing_supabase_records(supabase: Client):
     """
-    Supabase (viralhub_db) se sabhi existing records ke IDs, video_ids, aur post_urls fetch karta hai
+    Supabase (viralhub_db) se sabhi existing records ke IDs aur slugs fetch karta hai
     taki wahi data dobara copy na ho.
     """
     print(f"[DB Sync] Supabase ({SUPABASE_TABLE_NAME}) ke existing records check kiye ja rahe hain...")
     existing_ids = set()
-    existing_video_ids = set()
-    existing_post_urls = set()
+    existing_slugs = set()
     
     from_idx = 0
     while True:
         to_idx = from_idx + FETCH_CHUNK_SIZE - 1
         res = (
             supabase.table(SUPABASE_TABLE_NAME)
-            .select("id, video_id, post_url")
+            .select("id, slug")
             .range(from_idx, to_idx)
             .execute()
         )
@@ -125,17 +124,15 @@ def fetch_existing_supabase_records(supabase: Client):
         for row in data:
             if row.get("id"):
                 existing_ids.add(str(row["id"]))
-            if row.get("video_id"):
-                existing_video_ids.add(str(row["video_id"]))
-            if row.get("post_url"):
-                existing_post_urls.add(str(row["post_url"]))
+            if row.get("slug"):
+                existing_slugs.add(str(row["slug"]))
                 
         if len(data) < FETCH_CHUNK_SIZE:
             break
         from_idx += FETCH_CHUNK_SIZE
 
     print(f"[DB Sync] Supabase me total {len(existing_ids):,} existing records pehle se maujood hain.")
-    return existing_ids, existing_video_ids, existing_post_urls
+    return existing_ids, existing_slugs
 
 def migrate_data():
     try:
@@ -146,7 +143,7 @@ def migrate_data():
 
     try:
         # Step 1: Pehle Supabase ke existing records fetch karein
-        existing_ids, existing_video_ids, existing_post_urls = fetch_existing_supabase_records(supabase)
+        existing_ids, existing_slugs = fetch_existing_supabase_records(supabase)
 
         # Step 2: MongoDB records scan karein
         total_mongo = collection.count_documents({})
@@ -169,10 +166,8 @@ def migrate_data():
                 success_count += len(batch)
                 for item in batch:
                     existing_ids.add(item["id"])
-                    if item.get("video_id"):
-                        existing_video_ids.add(item["video_id"])
-                    if item.get("post_url"):
-                        existing_post_urls.add(item["post_url"])
+                    if item.get("slug"):
+                        existing_slugs.add(item["slug"])
                 print(f"[Success] Copied batch of {len(batch)} new videos | Total newly copied: {success_count:,}")
             except Exception as e:
                 # Batch error fallback: row by row
@@ -182,20 +177,20 @@ def migrate_data():
                         supabase.table(SUPABASE_TABLE_NAME).upsert([item]).execute()
                         success_count += 1
                         existing_ids.add(item["id"])
+                        if item.get("slug"):
+                            existing_slugs.add(item["slug"])
                     except Exception as single_err:
                         error_count += 1
                         print(f"[Error] Failed for ID {item.get('id')}: {single_err}")
 
         for doc in cursor:
             mongo_id = str(doc.get("_id"))
-            video_id = str(doc.get("video_id")) if doc.get("video_id") else None
-            post_url = str(doc.get("post_url")) if doc.get("post_url") else None
+            slug = generate_safe_slug(doc)
 
             # INCREMENTAL CHECK: Agar document pehle se Supabase me hai, toh SKIP karein!
             already_exists = (
                 mongo_id in existing_ids or
-                (video_id and video_id in existing_video_ids) or
-                (post_url and post_url in existing_post_urls)
+                (slug and slug in existing_slugs)
             )
 
             if already_exists:
@@ -205,19 +200,13 @@ def migrate_data():
             # Naya document format karein
             target_doc = {
                 "id": mongo_id,
-                "slug": generate_safe_slug(doc),
-                "video_id": video_id,
+                "slug": slug,
                 "title": str(doc.get("title") or "Untitled Video").strip(),
-                "post_url": post_url,
                 "480p_link": doc.get("480p_link") or doc.get("video_url1") or None,
                 "720p_link": doc.get("720p_link") or doc.get("video_url2") or None,
-                "domain": doc.get("domain") or None,
-                "duration": doc.get("duration") or None,
                 "scraped_at": parse_to_unix_seconds(doc.get("scraped_at")) or parse_to_unix_seconds(doc.get("created_at")),
                 "thumbnail_url": sanitize_thumbnail_path(doc.get("thumbnail_url")),
                 "views": int(doc.get("views") or 0),
-                "updated_at": parse_to_unix_ms(doc.get("updated_at")),
-                "site": doc.get("site") or doc.get("domain") or None,
             }
 
             pending_batch.append(target_doc)

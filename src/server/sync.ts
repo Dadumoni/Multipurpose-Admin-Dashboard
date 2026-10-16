@@ -163,11 +163,10 @@ export async function migrateMongoToSupabase(): Promise<{
     console.log(`[DB Sync] Starting incremental MongoDB → Supabase (${SUPABASE_TABLE_NAME}) synchronization...`);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Fetch all existing IDs, video_ids, and post_urls from Supabase viralhub_db
+    // 1. Fetch all existing IDs and slugs from Supabase viralhub_db
     console.log(`[DB Sync] Checking existing records in Supabase (${SUPABASE_TABLE_NAME})...`);
     const existingIds = new Set<string>();
-    const existingVideoIds = new Set<string>();
-    const existingPostUrls = new Set<string>();
+    const existingSlugs = new Set<string>();
 
     let from = 0;
     const FETCH_CHUNK = 1000;
@@ -176,7 +175,7 @@ export async function migrateMongoToSupabase(): Promise<{
     while (hasMore) {
       const { data, error } = await supabase
         .from(SUPABASE_TABLE_NAME)
-        .select('id, video_id, post_url')
+        .select('id, slug')
         .range(from, from + FETCH_CHUNK - 1);
 
       if (error) {
@@ -190,8 +189,7 @@ export async function migrateMongoToSupabase(): Promise<{
 
       for (const row of data) {
         if (row.id) existingIds.add(String(row.id));
-        if (row.video_id) existingVideoIds.add(String(row.video_id));
-        if (row.post_url) existingPostUrls.add(String(row.post_url));
+        if (row.slug) existingSlugs.add(String(row.slug));
       }
 
       if (data.length < FETCH_CHUNK) {
@@ -236,8 +234,7 @@ export async function migrateMongoToSupabase(): Promise<{
               if (rowErr) throw new Error(rowErr.message);
               successCount++;
               existingIds.add(item.id);
-              if (item.video_id) existingVideoIds.add(item.video_id);
-              if (item.post_url) existingPostUrls.add(item.post_url);
+              if (item.slug) existingSlugs.add(item.slug);
             } catch (singleErr: any) {
               errorCount++;
               migrationProgress.lastError = singleErr.message || String(singleErr);
@@ -254,8 +251,7 @@ export async function migrateMongoToSupabase(): Promise<{
           migrationProgress.successCount = successCount;
           batch.forEach((item) => {
             existingIds.add(item.id);
-            if (item.video_id) existingVideoIds.add(item.video_id);
-            if (item.post_url) existingPostUrls.add(item.post_url);
+            if (item.slug) existingSlugs.add(item.slug);
           });
           const sampleTitle = batch[0]?.title || 'Video';
           console.log(`[Success] Copied batch of ${batch.length} new videos (e.g. "${sampleTitle.slice(0, 40)}...") | Total newly copied: ${successCount.toLocaleString()}`);
@@ -271,14 +267,12 @@ export async function migrateMongoToSupabase(): Promise<{
 
     for await (const rawDoc of cursor) {
       const mongoId = String(rawDoc._id);
-      const videoId = rawDoc.video_id ? String(rawDoc.video_id) : null;
-      const postUrl = rawDoc.post_url ? String(rawDoc.post_url) : null;
+      const slug = generateSafeSlug(rawDoc);
 
       // Incremental check: SKIP if already present in Supabase!
       const alreadyExists =
         existingIds.has(mongoId) ||
-        (videoId && existingVideoIds.has(videoId)) ||
-        (postUrl && existingPostUrls.has(postUrl));
+        (slug && existingSlugs.has(slug));
 
       if (alreadyExists) {
         skippedCount++;
@@ -289,19 +283,13 @@ export async function migrateMongoToSupabase(): Promise<{
       // Format document according to Supabase viralhub_db schema
       const targetDoc: Record<string, any> = {
         id: mongoId,
-        slug: generateSafeSlug(rawDoc),
-        video_id: videoId,
+        slug: slug,
         title: (rawDoc.title || 'Untitled Video').trim(),
-        post_url: postUrl,
         '480p_link': rawDoc['480p_link'] || rawDoc.video_url1 || null,
         '720p_link': rawDoc['720p_link'] || rawDoc.video_url2 || null,
-        domain: rawDoc.domain || null,
-        duration: rawDoc.duration || null,
         scraped_at: parseToUnixSeconds(rawDoc.scraped_at) || parseToUnixSeconds(rawDoc.created_at) || null,
         thumbnail_url: sanitizeThumbnailPath(rawDoc.thumbnail_url),
         views: Number(rawDoc.views) || 0,
-        updated_at: parseToUnixMs(rawDoc.updated_at) || Date.now(),
-        site: rawDoc.site || rawDoc.domain || null,
       };
 
       pendingBatch.push(targetDoc);
