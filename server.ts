@@ -1,6 +1,5 @@
 import express from 'express';
 import multer from 'multer';
-import { createServer as createViteServer } from 'vite';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import dotenv from 'dotenv';
@@ -2931,7 +2930,8 @@ async function startServer() {
     });
   } else {
     console.log('[Static] Development mode active. Mounting Vite middleware.');
-    const vite = await createViteServer({
+    const { createServer } = await import('vite');
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });

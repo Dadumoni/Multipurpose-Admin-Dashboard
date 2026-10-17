@@ -4,7 +4,6 @@ import Layout from './components/dashboard/Layout';
 import Overview from './pages/Overview';
 import ScrapedVideos from './pages/ScrapedVideos';
 import UploadedVideos from './pages/UploadedVideos';
-import Logs from './pages/Logs';
 import R2Videos from './pages/R2Videos';
 import TelegramBot from './pages/TelegramBot';
 import SiteScraper from './pages/SiteScraper';
@@ -25,7 +24,7 @@ export default function App() {
               <Route path="/uploaded" element={<UploadedVideos />} />
               <Route path="/scrapers" element={<SiteScraper />} />
               <Route path="/telegram-bot" element={<TelegramBot />} />
-              <Route path="/logs" element={<Logs />} />
+              <Route path="/logs" element={<Navigate to="/overview" replace />} />
               <Route path="/settings" element={<Navigate to="/r2-videos" replace />} />
               {/* Catch-All Fallback for client-side routing */}
               <Route path="*" element={<Navigate to="/overview" replace />} />

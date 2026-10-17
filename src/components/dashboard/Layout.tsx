@@ -63,7 +63,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { icon: Video, label: 'R2 Videos', href: '/r2-videos' },
     { icon: Globe, label: 'Site Scraper', href: '/scrapers' },
     { icon: Bot, label: 'Telegram Bot', href: '/telegram-bot' },
-    { icon: Terminal, label: 'Logs', href: '/logs' },
   ];
 
   const currentLabel = menuItems.find(i => i.href === location.pathname)?.label || 'Overview';

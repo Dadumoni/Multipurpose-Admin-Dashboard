@@ -350,7 +350,9 @@ export default function Overview() {
         {/* Card 1: Total Videos (Mongo DB) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Videos (Mongo DB)</span>
+            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
+              TOTAL VIDEOS <span className="font-mono text-xs normal-case font-normal text-zinc-500 dark:text-zinc-400 tracking-normal">(Mongo DB)</span>
+            </span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
               <Video className="h-4 w-4" />
             </div>
@@ -418,7 +420,9 @@ export default function Overview() {
         {/* Card 3: Total Videos (Supabase) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Videos (Supabase)</span>
+            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
+              TOTAL VIDEOS <span className="font-mono text-xs normal-case font-normal text-zinc-500 dark:text-zinc-400 tracking-normal">(Supabase)</span>
+            </span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
               <Film className="h-4 w-4" />
             </div>
