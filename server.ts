@@ -76,81 +76,19 @@ function asyncBackupUpsert(_records: any[]) {
   // Disabled: MongoDB -> Supabase copy only runs when the user explicitly clicks DB Sync
 }
 
-// Auto-detect public URL or use environment variable (APP_URL)
-let detectedPublicUrl = (process.env.APP_URL || '').trim();
-
-function startKeepAliveWorker(serverPort: number) {
-  // Free tier instances sleep when idle. Ping every 5 minutes (300000 ms) to prevent sleeping.
-  const intervalMs = 300000;
-
-  const getTargetUrl = () => {
-    const base = detectedPublicUrl || (process.env.APP_URL || '').trim();
-    if (base) {
-      return `${base.replace(/\/+$/, '')}/ping`;
-    }
-    return `http://127.0.0.1:${serverPort}/ping`;
-  };
-
-  const pingSelf = async () => {
-    const targetUrl = getTargetUrl();
-    try {
-      const startTime = Date.now();
-      const res = await axios.get(targetUrl, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Koyeb-KeepAlive-Worker/1.0',
-          'X-Keep-Alive-Ping': 'true',
-        },
-      });
-      const latency = Date.now() - startTime;
-      console.log(`[Keep-Alive] Ping to ${targetUrl} successful - HTTP ${res.status} (${latency}ms)`);
-    } catch (err: any) {
-      console.warn(`[Keep-Alive] Self-ping notice for ${targetUrl}: ${err?.message || err}`);
-    }
-  };
-
-  // Initial ping after 20 seconds to confirm keep-alive functionality
-  const initialTimer = setTimeout(() => {
-    pingSelf();
-  }, 20000);
-
-  // Background recurring ping every 5 minutes (300000 ms)
-  const intervalTimer = setInterval(() => {
-    pingSelf();
-  }, intervalMs);
-
-  if (initialTimer.unref) initialTimer.unref();
-  if (intervalTimer.unref) intervalTimer.unref();
-
-  console.log(`[Keep-Alive] Auto-ping worker active (interval: 5 minutes / ${intervalMs}ms)`);
-}
-
 export const app = express();
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-  app.use(express.static(path.resolve(__dirname, 'public')));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.static(path.resolve(__dirname, 'public')));
 
-  // Host detection middleware: dynamically tracks public host from incoming requests if APP_URL is not set
-  app.use((req, _res, next) => {
-    if (!detectedPublicUrl) {
-      const forwardedHost = req.get('x-forwarded-host') || req.get('host');
-      if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('127.0.0.1')) {
-        const proto = req.get('x-forwarded-proto') || 'https';
-        detectedPublicUrl = `${proto}://${forwardedHost}`;
-        console.log(`[Keep-Alive] Auto-detected public app URL: ${detectedPublicUrl}`);
-      }
-    }
-    next();
+// Lightweight health check endpoint
+app.get(['/ping', '/api/ping'], (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
   });
-
-  // Lightweight keep-alive endpoint for Koyeb health checks and self-ping worker
-  app.get(['/ping', '/api/ping'], (_req, res) => {
-    res.status(200).json({
-      status: 'ok',
-      uptime: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-    });
-  });
+});
 
   // Cloudflare R2 S3-Compatible Client Helper
   function getR2Client(): S3Client {
@@ -3002,7 +2940,6 @@ async function startServer() {
 
   app.listen(port, host, () => {
     console.log(`Server running at http://${host}:${port}`);
-    startKeepAliveWorker(port);
     initStatsChangeStream().catch((err: any) => console.warn('[StatsManager] Change stream notice:', err.message));
   });
 }
