@@ -60,6 +60,7 @@ export default function ScrapedVideos() {
   const [loading, setLoading] = useState(true);
   const [activeTable, setActiveTable] = useState<'post' | 'posts' | 'videos'>('post');
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isViewingMissingThumbs, setIsViewingMissingThumbs] = useState(false);
   const [schemaCacheError, setSchemaCacheError] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
@@ -858,6 +859,17 @@ export default function ScrapedVideos() {
     return counts;
   }, [domainSources]);
 
+  const missingThumbnailCount = useMemo(() => {
+    return videos.filter(v => !v.thumbnail_url || !v.thumbnail_url.trim() || v.thumbnail_url === 'null').length;
+  }, [videos]);
+
+  const displayedVideos = useMemo(() => {
+    if (isViewingMissingThumbs) {
+      return videos.filter(v => !v.thumbnail_url || !v.thumbnail_url.trim() || v.thumbnail_url === 'null');
+    }
+    return videos;
+  }, [videos, isViewingMissingThumbs]);
+
   return (
     <div className="p-6 space-y-6">
       {/* Schema Cache Alert Notice if needed */}
@@ -1087,6 +1099,9 @@ export default function ScrapedVideos() {
         totalPosts={totalPostsCount}
         activeTable={activeTable}
         totalViews={totalViewsCount}
+        missingThumbnailCount={missingThumbnailCount}
+        isViewingMissingThumbs={isViewingMissingThumbs}
+        setIsViewingMissingThumbs={setIsViewingMissingThumbs}
         availableSources={availableSources}
         sourceFilter={sourceFilter}
         setSourceFilter={setSourceFilter}
@@ -1192,7 +1207,7 @@ export default function ScrapedVideos() {
           ) : viewMode === 'grid' ? (
             /* GRID VIEW */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {videos.map((video: ScrapedVideo, idx: number) => (
+              {displayedVideos.map((video: ScrapedVideo, idx: number) => (
                 <VideoGridCard
                   key={video.id}
                   video={video}
@@ -1226,7 +1241,7 @@ export default function ScrapedVideos() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {videos.map((video: ScrapedVideo, idx: number) => (
+                  {displayedVideos.map((video: ScrapedVideo, idx: number) => (
                     <VideoListRow
                       key={video.id}
                       video={video}

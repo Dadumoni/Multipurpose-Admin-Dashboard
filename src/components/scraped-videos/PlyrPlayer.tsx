@@ -150,12 +150,14 @@ export function PlyrPlayer({
     }
   }, [src, normalizedSources]);
 
-  const optimizedPoster = useMemo(() => {
+  const directPoster = useMemo(() => {
     if (!poster) return undefined;
-    if (poster.startsWith('data:') || poster.startsWith('blob:') || poster.includes('/api/image-optimizer')) {
+    if (poster.startsWith('data:') || poster.startsWith('blob:') || poster.startsWith('http://') || poster.startsWith('https://')) {
       return poster;
     }
-    return `/api/image-optimizer?url=${encodeURIComponent(poster)}&w=800&q=80&format=webp`;
+    const r2Base = (import.meta.env.VITE_R2_PUBLIC_URL || 'https://pub-97accfb7284047969abd231a24beceba.r2.dev').replace(/\/$/, '');
+    const cleanPath = poster.startsWith('/') ? poster.slice(1) : poster;
+    return `${r2Base}/${cleanPath}`;
   }, [poster]);
 
   return (
@@ -167,7 +169,7 @@ export function PlyrPlayer({
         ref={videoRef}
         playsInline
         preload="auto"
-        poster={optimizedPoster}
+        poster={directPoster}
         {...({ referrerPolicy: 'no-referrer' } as any)}
         className="h-full w-full object-contain"
         style={{ objectFit: 'contain' }}
@@ -245,13 +247,15 @@ export function LazyThumbnail({
     );
   }
 
-  // Optimize image URL on-the-fly to compressed WebP (Cloudflare R2 or external CDN images)
-  const optimizedSrc = (() => {
+  // Load image URL directly (Cloudflare R2 or external CDN images) without server proxy
+  const directSrc = (() => {
     if (!src) return '';
-    if (src.startsWith('data:') || src.startsWith('blob:') || src.includes('/api/image-optimizer')) {
+    if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('http://') || src.startsWith('https://')) {
       return src;
     }
-    return `/api/image-optimizer?url=${encodeURIComponent(src)}&w=480&q=75&format=webp`;
+    const r2Base = (import.meta.env.VITE_R2_PUBLIC_URL || 'https://pub-97accfb7284047969abd231a24beceba.r2.dev').replace(/\/$/, '');
+    const cleanPath = src.startsWith('/') ? src.slice(1) : src;
+    return `${r2Base}/${cleanPath}`;
   })();
 
   return (
@@ -265,23 +269,13 @@ export function LazyThumbnail({
 
       {isInView && (
         <img
-          src={optimizedSrc}
+          src={directSrc}
           alt={alt || ''}
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           {...({ fetchPriority: priority ? 'high' : 'low' } as any)}
           onLoad={() => setLoaded(true)}
-          onError={() => {
-            // If optimizer URL fails, retry with raw source directly as fallback
-            if (optimizedSrc !== src) {
-              const testImg = new Image();
-              testImg.onload = () => setLoaded(true);
-              testImg.onerror = () => setHasError(true);
-              testImg.src = src;
-            } else {
-              setHasError(true);
-            }
-          }}
+          onError={() => setHasError(true)}
           className={`${className || ''} ${
             loaded ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-95 blur-xs'
           } transition-all duration-300 ease-out`}

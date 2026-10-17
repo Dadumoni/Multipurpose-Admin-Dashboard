@@ -52,8 +52,6 @@ const SidebarItem = ({ icon: Icon, label, href, active, onClick }: SidebarItemPr
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [isSyncingDb, setIsSyncingDb] = useState(false);
-  const [showSyncCard, setShowSyncCard] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, resolvedTheme, toggleTheme } = useTheme();
@@ -61,11 +59,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Overview', href: '/overview' },
     { icon: Film, label: 'All Videos', href: '/scraped' },
-    { icon: Upload, label: 'Upload Video', href: '/uploaded' },
+    { icon: Upload, label: 'Telegram Uploaded', href: '/uploaded' },
+    { icon: Video, label: 'R2 Videos', href: '/r2-videos' },
     { icon: Globe, label: 'Site Scraper', href: '/scrapers' },
     { icon: Bot, label: 'Telegram Bot', href: '/telegram-bot' },
     { icon: Terminal, label: 'Logs', href: '/logs' },
-    { icon: Video, label: 'R2 Videos', href: '/r2-videos' },
   ];
 
   const currentLabel = menuItems.find(i => i.href === location.pathname)?.label || 'Overview';
@@ -261,92 +259,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {profileDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black shadow-xl z-50 p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
-                  {/* DB Sync Action inside Settings Menu */}
-                  <div className="px-3 py-2 flex items-center justify-between text-zinc-700 dark:text-zinc-300">
-                    <span className="flex items-center gap-2 font-medium">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-database h-4 w-4 text-zinc-500 dark:text-zinc-400"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
-                      <span>DB Sync</span>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isSyncingDb}
-                      onClick={async () => {
-                        if (isSyncingDb) return;
-                        setIsSyncingDb(true);
-                        setShowSyncCard(true);
-                        try {
-                          const res = await fetch('/api/sync/migrate', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                          });
-                          const data = await res.json();
-                          if (!res.ok || !data.success) {
-                            toast.error(data.error || 'Failed to start DB Sync');
-                          }
-                        } catch {
-                          toast.error('Failed to trigger DB Sync');
-                        } finally {
-                          setTimeout(() => setIsSyncingDb(false), 1500);
-                        }
-                      }}
-                      title="Sync MongoDB to Supabase"
-                      aria-label="Sync MongoDB to Supabase"
-                      className="p-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-black dark:text-white transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={cn("lucide lucide-rotate-ccw-icon lucide-rotate-ccw h-3.5 w-3.5", isSyncingDb && "animate-spin")}
-                      >
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
-                      </svg>
-                    </button>
-                  </div>
 
-                  {/* Card below DB Sync showing live copying status and See Logs link */}
-                  {showSyncCard && (
-                    <div className="mx-1.5 mb-1.5 p-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-black dark:text-white">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                          <span className="truncate">Copying to Supabase...</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowSyncCard(false);
-                          }}
-                          title="Close notification"
-                          aria-label="Close notification"
-                          className="p-0.5 rounded text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-200/70 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          navigate('/logs');
-                        }}
-                        className="w-full py-1 px-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 text-black dark:text-white text-[11px] font-semibold flex items-center justify-center gap-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-                      >
-                        <span>See Logs</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-1" />
                   {/* Day / Night Theme toggle */}
                   <button
                     type="button"

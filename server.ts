@@ -125,8 +125,7 @@ function startKeepAliveWorker(serverPort: number) {
   console.log(`[Keep-Alive] Auto-ping worker active (interval: 5 minutes / ${intervalMs}ms)`);
 }
 
-async function startServer() {
-  const app = express();
+export const app = express();
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.use(express.static(path.resolve(__dirname, 'public')));
@@ -2047,6 +2046,132 @@ async function startServer() {
     }
   });
 
+  // 8b. GET /api/telegram-uploaded - Query all Telegram to ZeroStorage / MongoDB uploaded videos
+  app.get('/api/telegram-uploaded', async (_req, res) => {
+    try {
+      await connectToDatabase();
+      const [trackedFiles, uploadedVideos] = await Promise.all([
+        TrackedFileModel.find().sort({ created_at: -1 }).lean(),
+        UploadedVideoModel.find().sort({ created_at: -1 }).lean(),
+      ]);
+
+      const itemMap = new Map<string, any>();
+
+      for (const tf of trackedFiles) {
+        const key = String(tf.id || tf._id || tf.file_hash);
+        itemMap.set(key, {
+          id: String(tf.id || tf._id),
+          title: tf.title || tf.file_name || 'Untitled Video',
+          file_name: tf.file_name || tf.title || 'video.mp4',
+          file_size: tf.file_size || 'Video File',
+          mime_type: tf.mime_type || 'video/mp4',
+          source: tf.source || 'telegram',
+          telegram_file_id: tf.telegram_file_id || null,
+          telegram_file_unique_id: tf.telegram_file_unique_id || null,
+          zerostorage_file_id: tf.zerostorage_file_id || null,
+          zerostorage_download_url: tf.zerostorage_download_url || null,
+          zerostorage_embed_url: tf.zerostorage_embed_url || null,
+          video_url: tf.zerostorage_download_url || tf.zerostorage_embed_url || '',
+          thumbnail_url: tf.thumbnail_url || null,
+          created_at: tf.created_at || new Date().toISOString(),
+        });
+      }
+
+      for (const uv of uploadedVideos) {
+        const key = String(uv.id || uv._id);
+        if (!itemMap.has(key)) {
+          itemMap.set(key, {
+            id: String(uv.id || uv._id),
+            title: uv.title || 'Untitled Video',
+            file_name: uv.title || 'video.mp4',
+            file_size: uv.file_size || 'Video File',
+            mime_type: 'video/mp4',
+            source: uv.source || 'telegram',
+            telegram_file_id: uv.file_id || null,
+            telegram_file_unique_id: null,
+            zerostorage_file_id: null,
+            zerostorage_download_url: uv.video_url?.includes('zerostorage') ? uv.video_url : null,
+            zerostorage_embed_url: null,
+            video_url: uv.video_url || '',
+            thumbnail_url: uv.thumbnail_url || null,
+            created_at: uv.created_at || new Date().toISOString(),
+          });
+        }
+      }
+
+      const items = Array.from(itemMap.values()).sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      const zeroStorageCount = items.filter(i => Boolean(
+        i.zerostorage_download_url || i.zerostorage_file_id || i.zerostorage_embed_url || i.video_url?.includes('zerostorage')
+      )).length;
+
+      res.json({
+        data: items,
+        totalCount: items.length,
+        zeroStorageCount,
+      });
+    } catch (error: any) {
+      console.error('Failed to query telegram-uploaded videos:', error);
+      res.status(500).json({ error: error.message || 'Failed to query telegram-uploaded videos' });
+    }
+  });
+
+  // 8c. PATCH /api/telegram-uploaded/:id - Update video title/details
+  app.patch('/api/telegram-uploaded/:id', async (req, res) => {
+    try {
+      await connectToDatabase();
+      const id = req.params.id;
+      const { title } = req.body;
+      if (!title) return res.status(400).json({ error: 'Title is required' });
+
+      await Promise.all([
+        TrackedFileModel.updateOne({ id }, { $set: { title, file_name: title } }),
+        UploadedVideoModel.updateOne({ id }, { $set: { title } }),
+      ]);
+
+      res.json({ success: true, message: 'Video title updated' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to update video' });
+    }
+  });
+
+  // 8d. DELETE /api/telegram-uploaded/:id - Delete video from MongoDB
+  app.delete('/api/telegram-uploaded/:id', async (req, res) => {
+    try {
+      await connectToDatabase();
+      const id = req.params.id;
+      await Promise.all([
+        TrackedFileModel.deleteOne({ id }),
+        UploadedVideoModel.deleteOne({ id }),
+      ]);
+      res.json({ success: true, message: 'Video deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to delete video' });
+    }
+  });
+
+  // 8e. POST /api/telegram-uploaded/bulk-delete - Bulk delete videos from MongoDB
+  app.post('/api/telegram-uploaded/bulk-delete', async (req, res) => {
+    try {
+      await connectToDatabase();
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'IDs array required' });
+      }
+
+      await Promise.all([
+        TrackedFileModel.deleteMany({ id: { $in: ids } }),
+        UploadedVideoModel.deleteMany({ id: { $in: ids } }),
+      ]);
+
+      res.json({ success: true, count: ids.length });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to bulk delete videos' });
+    }
+  });
+
 
   // 5c. GET /api/storage/stats - Calculate total storage used across uploaded files
   app.get('/api/storage/stats', async (_req, res) => {
@@ -2788,9 +2913,7 @@ async function startServer() {
     }
   });
 
-  // Start background auto sync runner
-  startPeriodicSync();
-
+async function startServer() {
   // Resolve frontend distribution paths
   const candidateDistPaths = [
     path.resolve(__dirname, 'dist'),
@@ -2881,8 +3004,11 @@ async function startServer() {
     console.log(`Server running at http://${host}:${port}`);
     startKeepAliveWorker(port);
     initStatsChangeStream().catch((err: any) => console.warn('[StatsManager] Change stream notice:', err.message));
-    initScraperManager().catch((err: any) => console.warn('[SiteScraper] Manager init notice:', err.message));
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

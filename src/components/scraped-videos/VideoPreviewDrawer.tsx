@@ -36,9 +36,9 @@ interface VideoPreviewDrawerProps {
   setIsEditingThumbUrl: (editing: boolean) => void;
   handleSaveChanges: () => Promise<void>;
   isSaving: boolean;
-  handleRegenerateThumbnail: () => Promise<void>;
-  isRegeneratingThumb: boolean;
-  handleCancelThumbnailRegeneration: () => void;
+  handleRegenerateThumbnail?: () => Promise<void>;
+  isRegeneratingThumb?: boolean;
+  handleCancelThumbnailRegeneration?: () => void;
   handleCopyUrl: (url: string, label: string) => void;
   setVideoToDelete: (id: number | string | null) => void;
   setDeleteConfirmOpen: (open: boolean) => void;
@@ -274,46 +274,7 @@ export function VideoPreviewDrawer({
             </div>
           </div>
 
-          {/* Actions row: Regenerate Thumbnail, Delete */}
-          <div className="relative w-full shrink-0">
-            <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-2">Actions</div>
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                type="button"
-                onClick={handleRegenerateThumbnail}
-                disabled={isRegeneratingThumb}
-                className="h-9 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-xs font-medium flex items-center justify-center gap-1.5 text-zinc-700 dark:text-zinc-300 shadow-sm transition-colors cursor-pointer disabled:opacity-50"
-                title="Generate a new thumbnail snapshot from video stream"
-              >
-                <RotateCw className={`h-3.5 w-3.5 shrink-0 ${isRegeneratingThumb ? 'animate-spin text-zinc-500 dark:text-zinc-400' : ''}`} />
-                <span className="truncate">{isRegeneratingThumb ? 'Regenerating...' : 'Regenerate Thumb.'}</span>
-              </button>
 
-              {isRegeneratingThumb ? (
-                <button
-                  type="button"
-                  onClick={handleCancelThumbnailRegeneration}
-                  className="h-9 rounded-lg border border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-xs font-semibold flex items-center justify-center gap-1.5 text-red-600 dark:text-red-400 shadow-sm cursor-pointer"
-                  title="Cancel thumbnail generation"
-                >
-                  <Square className="h-3 w-3 fill-current" />
-                  <span>Cancel</span>
-                </button>
-              ) : (
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setVideoToDelete(targetId);
-                    setDeleteConfirmOpen(true);
-                  }}
-                  className="h-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-white dark:bg-black hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium flex items-center justify-center gap-1.5 text-red-600 dark:text-red-400 shadow-sm cursor-pointer"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Delete</span>
-                </button>
-              )}
-            </div>
-          </div>
 
           {/* Post URL Section */}
           {previewVideo.post_url && (
@@ -523,6 +484,17 @@ export function VideoPreviewDrawer({
             className="flex-1 h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition-colors cursor-pointer"
           >
             Close
+          </button>
+          <button 
+            type="button"
+            onClick={() => {
+              setVideoToDelete(targetId);
+              setDeleteConfirmOpen(true);
+            }}
+            className="flex-1 h-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-white dark:bg-black hover:bg-red-50 dark:hover:bg-red-950/40 text-sm font-medium flex items-center justify-center gap-1.5 text-red-600 dark:text-red-400 shadow-sm cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Delete</span>
           </button>
           <button
             type="button"

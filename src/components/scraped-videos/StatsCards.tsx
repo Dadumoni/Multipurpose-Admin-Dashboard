@@ -1,11 +1,14 @@
 import React from 'react';
-import { Film, Eye, Folder, Link2Off } from 'lucide-react';
+import { Film, Eye, Folder, Link2Off, ImageOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface StatsCardsProps {
   totalPosts: number;
   activeTable: string;
-  totalViews: number;
+  totalViews?: number;
+  missingThumbnailCount?: number;
+  isViewingMissingThumbs?: boolean;
+  setIsViewingMissingThumbs?: React.Dispatch<React.SetStateAction<boolean>>;
   availableSources: string[];
   sourceFilter: string;
   setSourceFilter: (source: string) => void;
@@ -21,7 +24,10 @@ interface StatsCardsProps {
 export function StatsCards({
   totalPosts,
   activeTable,
-  totalViews,
+  totalViews = 0,
+  missingThumbnailCount = 0,
+  isViewingMissingThumbs = false,
+  setIsViewingMissingThumbs,
   availableSources,
   sourceFilter,
   setSourceFilter,
@@ -38,17 +44,18 @@ export function StatsCards({
       {/* Total Posts Card */}
       <div 
         onClick={() => {
-          if (isViewingExpired) {
+          if (isViewingExpired || isViewingMissingThumbs) {
             setIsViewingExpired(false);
+            setIsViewingMissingThumbs?.(false);
             setIsViewingDuplicates(false);
             setCurrentPage(1);
             setSelectedIds(new Set());
           }
         }}
         className={`bg-white dark:bg-black border rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all ${
-          isViewingExpired ? 'cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700' : 'border-zinc-200 dark:border-zinc-800'
+          isViewingExpired || isViewingMissingThumbs ? 'cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700' : 'border-zinc-200 dark:border-zinc-800'
         }`}
-        title={isViewingExpired ? "Click to view All Videos" : "Total posts in collection"}
+        title={isViewingExpired || isViewingMissingThumbs ? "Click to view All Videos" : "Total posts in collection"}
       >
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Posts</span>
@@ -62,26 +69,48 @@ export function StatsCards({
           </div>
           <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-between">
             <span>In public.{activeTable}</span>
-            {!isViewingExpired && (
+            {!isViewingExpired && !isViewingMissingThumbs && (
               <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Active View</span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Total Views Card */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+      {/* Missing Thumbnail Card */}
+      <div 
+        onClick={() => {
+          if (setIsViewingMissingThumbs) {
+            setIsViewingMissingThumbs(prev => !prev);
+            setIsViewingExpired(false);
+            setCurrentPage(1);
+            setSelectedIds(new Set());
+          }
+        }}
+        className={`bg-white dark:bg-black border rounded-xl p-5 shadow-sm flex flex-col justify-between cursor-pointer transition-all hover:shadow-md ${
+          isViewingMissingThumbs
+            ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20 dark:bg-amber-950/20 shadow-sm'
+            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+        }`}
+        title="Videos with missing or empty thumbnails in database. Click to filter"
+      >
         <div className="flex items-center justify-between">
-          <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Views</span>
-          <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
-            <Eye className="h-4 w-4" />
+          <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Missing Thumbnail</span>
+          <div className={`rounded-md p-1.5 ${isViewingMissingThumbs ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'}`}>
+            <ImageOff className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-3">
           <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono">
-            {totalViews.toLocaleString()}
+            {missingThumbnailCount.toLocaleString()}
           </div>
-          <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Across scraped posts</div>
+          <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-between">
+            <span>Null or empty in DB</span>
+            {isViewingMissingThumbs ? (
+              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-100/70 dark:bg-amber-950/60 px-1.5 py-0.2 rounded">Filtered</span>
+            ) : (
+              <span className="text-[11px] text-zinc-400">Click to filter</span>
+            )}
+          </div>
         </div>
       </div>
 

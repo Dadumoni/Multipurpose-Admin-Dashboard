@@ -347,10 +347,10 @@ export default function Overview() {
 
       {/* 4 STAT CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Videos */}
+        {/* Card 1: Total Videos (Mongo DB) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Videos</span>
+            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Videos (Mongo DB)</span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
               <Video className="h-4 w-4" />
             </div>
@@ -415,31 +415,31 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Card 3: All Videos */}
+        {/* Card 3: Total Videos (Supabase) */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">All Videos</span>
+            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Videos (Supabase)</span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
               <Film className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-semibold tracking-tight text-black dark:text-white">{stats.totalScraped}</div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 font-mono">MongoDB post (Primary)</div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 font-mono">Supabase all_videos_db / viralhub_db</div>
           </div>
         </div>
 
-        {/* Card 4: Uploaded Videos - Changed label to Zerostorage stored */}
+        {/* Card 4: Telegram Upload */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Uploaded Videos</span>
+            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Telegram Upload</span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
               <Upload className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-semibold tracking-tight text-black dark:text-white">{stats.totalUploaded}</div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Zerostorage stored</div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Telegram uploaded</div>
           </div>
         </div>
       </div>
