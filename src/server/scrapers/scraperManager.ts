@@ -285,17 +285,36 @@ export async function startSiteScraper(siteId: string): Promise<boolean> {
 
 export async function getAllScrapersInfo(): Promise<ScraperSiteInfo[]> {
   await connectToDatabase();
+
+  // 1. Purge legacy duplicate record if present
+  try {
+    await ScraperSiteModel.deleteMany({ site_id: 'mydesi_rest' });
+  } catch (err) {
+    // Ignore if collection not ready
+  }
+
   const docs = await ScraperSiteModel.find().sort({ site_id: 1 }).lean();
 
+  const seenDomains = new Set<string>();
   const results: ScraperSiteInfo[] = [];
+
   for (const doc of docs) {
+    // Deduplicate by domain (prevents duplicate cards in UI)
+    if (seenDomains.has(doc.domain)) {
+      try {
+        await ScraperSiteModel.deleteOne({ _id: doc._id });
+      } catch {}
+      continue;
+    }
+    seenDomains.add(doc.domain);
+
     const actualCount = await PostModel.countDocuments({ domain: doc.domain });
     results.push({
       id: doc.site_id,
       name: doc.name,
       domain: doc.domain,
       base_url: doc.base_url,
-      cron_schedule: doc.cron_schedule || 'Hourly Staggered',
+      cron_schedule: doc.cron_schedule || 'Every 12 Hours',
       enabled: doc.enabled,
       status: (doc.status as any) || 'idle',
       total_scraped: actualCount,

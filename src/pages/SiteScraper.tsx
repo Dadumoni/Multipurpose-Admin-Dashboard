@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Globe, 
   RotateCw, 
@@ -179,9 +179,19 @@ export default function SiteScraper() {
     }
   };
 
-  const totalScrapedAll = sites.reduce((acc, curr) => acc + (curr.total_scraped || 0), 0);
-  const totalFailedAll = sites.reduce((acc, curr) => acc + (curr.failed_count || 0), 0);
-  const activeCount = sites.filter((s) => s.enabled).length;
+  const uniqueSites = useMemo(() => {
+    const seen = new Set<string>();
+    return sites.filter((s) => {
+      const key = s.domain || s.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [sites]);
+
+  const totalScrapedAll = uniqueSites.reduce((acc, curr) => acc + (curr.total_scraped || 0), 0);
+  const totalFailedAll = uniqueSites.reduce((acc, curr) => acc + (curr.failed_count || 0), 0);
+  const activeCount = uniqueSites.filter((s) => s.enabled).length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
@@ -281,10 +291,10 @@ export default function SiteScraper() {
             <Globe className="h-4 w-4 text-zinc-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-black dark:text-white">
-            {sites.length}
+            {uniqueSites.length}
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {activeCount} active • {sites.length - activeCount} paused
+            {activeCount} active • {uniqueSites.length - activeCount} paused
           </div>
         </div>
 
@@ -335,13 +345,13 @@ export default function SiteScraper() {
           <div className="py-8 text-center text-xs text-zinc-400 animate-pulse">
             Loading scraper modules...
           </div>
-        ) : sites.length === 0 ? (
+        ) : uniqueSites.length === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-400">
             No scrapers configured.
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2">
-            {sites.map((site) => {
+            {uniqueSites.map((site) => {
               const isRunning = site.status === 'running';
               const isStopped = !site.enabled || site.status === 'stopped';
               const busy = actionInProgress === site.id;
