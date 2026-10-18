@@ -776,9 +776,24 @@ export default function UploadedVideos() {
 
               {/* Editable Video Title */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  Video Title
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Video Title
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editTitle.trim()) {
+                        copyToClipboard(editTitle.trim(), 'Video Title');
+                      }
+                    }}
+                    className="p-1 rounded text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                    title="Copy video title"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copy</span>
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={editTitle}
@@ -893,12 +908,12 @@ export default function UploadedVideos() {
               </div>
             </div>
 
-            {/* Footer with [ Close ] [ Delete ] [ Save Changes ] (Strictly no ACTIONS section!) */}
-            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex gap-2 shrink-0">
+            {/* Footer with [ Close ] [ Delete ] [ Save Changes ] */}
+            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setPreviewVideo(null)}
-                className="flex-1 h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition-colors cursor-pointer"
+                className="flex-1 h-9 px-2 sm:px-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-xs sm:text-sm font-medium text-zinc-700 dark:text-zinc-300 shadow-sm transition-colors cursor-pointer whitespace-nowrap text-center"
               >
                 Close
               </button>
@@ -909,9 +924,9 @@ export default function UploadedVideos() {
                   setVideoToDelete(previewVideo);
                   setDeleteConfirmOpen(true);
                 }}
-                className="flex-1 h-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-white dark:bg-black hover:bg-red-50 dark:hover:bg-red-950/40 text-sm font-medium flex items-center justify-center gap-1.5 text-red-600 dark:text-red-400 shadow-sm cursor-pointer"
+                className="flex-1 h-9 px-2 sm:px-3 rounded-lg border border-red-200 dark:border-red-900/60 bg-white dark:bg-black hover:bg-red-50 dark:hover:bg-red-950/40 text-xs sm:text-sm font-medium flex items-center justify-center gap-1 text-red-600 dark:text-red-400 shadow-sm cursor-pointer whitespace-nowrap"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5 shrink-0" />
                 <span>Delete</span>
               </button>
 
@@ -919,14 +934,14 @@ export default function UploadedVideos() {
                 type="button"
                 onClick={handleSaveTitle}
                 disabled={isSavingTitle}
-                className="flex-1 h-9 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:bg-zinc-900 dark:hover:bg-zinc-100 disabled:opacity-50 text-sm font-medium inline-flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                className="flex-[1.4] h-9 px-3 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:bg-zinc-900 dark:hover:bg-zinc-100 disabled:opacity-50 text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
               >
                 {isSavingTitle ? (
-                  <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                  <RotateCw className="h-3.5 w-3.5 animate-spin shrink-0" />
                 ) : (
-                  <Check className="h-3.5 w-3.5 text-white dark:text-black" />
+                  <Check className="h-3.5 w-3.5 text-white dark:text-black shrink-0" />
                 )}
-                <span>Save Changes</span>
+                <span className="whitespace-nowrap">Save Changes</span>
               </button>
             </div>
           </div>

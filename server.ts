@@ -2805,6 +2805,70 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
   });
 
   // --- Site Scraper API Routes ---
+  const getScraperAppUrl = () => (process.env.SCRAPER_APP_URL || '').trim().replace(/\/+$/, '');
+
+  // 1. GET /api/scrapers/status - Check health & status of external Python Scraper service (e.g. on Koyeb)
+  app.get('/api/scrapers/status', async (_req, res) => {
+    const scraperUrl = getScraperAppUrl();
+    if (!scraperUrl) {
+      return res.json({
+        online: false,
+        configured: false,
+        is_running: false,
+        message: 'SCRAPER_APP_URL is not set in environment variables.',
+        app_url: '',
+      });
+    }
+
+    try {
+      const response = await axios.get(`${scraperUrl}/api/status`, {
+        timeout: 4000,
+        headers: { 'User-Agent': 'Multipurpose-Dashboard/1.0' },
+      });
+      return res.json({
+        online: true,
+        configured: true,
+        is_running: response.data?.is_running ?? true,
+        active_site: response.data?.active_site || null,
+        message: response.data?.message || 'Scraper Engine is Online',
+        app_url: scraperUrl,
+      });
+    } catch (error: any) {
+      return res.json({
+        online: false,
+        configured: true,
+        is_running: false,
+        message: error?.response?.data?.message || error?.message || 'External scraper is offline or asleep',
+        app_url: scraperUrl,
+      });
+    }
+  });
+
+  // 2. POST /api/scrapers/master - Master Pause/Resume All Scrapers
+  app.post('/api/scrapers/master', async (req, res) => {
+    const scraperUrl = getScraperAppUrl();
+    const { action } = req.body; // 'pause' | 'resume'
+
+    if (!scraperUrl) {
+      return res.status(400).json({ error: 'SCRAPER_APP_URL is not configured' });
+    }
+
+    try {
+      const response = await axios.post(
+        `${scraperUrl}/api/control/master`,
+        { action },
+        { timeout: 6000 }
+      );
+      return res.json(response.data);
+    } catch (error: any) {
+      console.error('[SiteScraper Master Control Error]:', error?.message || error);
+      return res.status(500).json({
+        error: error?.response?.data?.error || error?.message || 'Failed to control master scraper',
+      });
+    }
+  });
+
+  // 3. GET /api/scrapers - List all scraper sites from MongoDB (fast, persists history even if scraper app sleeps)
   app.get('/api/scrapers', async (_req, res) => {
     try {
       const sites = await getAllScrapersInfo();
@@ -2815,22 +2879,50 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     }
   });
 
+  // 4. POST /api/scrapers/:id/run - Trigger incremental run for a single site
   app.post('/api/scrapers/:id/run', async (req, res) => {
     try {
       const siteId = req.params.id;
-      runSiteScraper(siteId).catch((err) => {
-        console.error(`[SiteScraper API] Background run error for ${siteId}:`, err?.message || err);
-      });
-      res.json({ success: true, message: `Scraper execution started for "${siteId}"` });
+      const scraperUrl = getScraperAppUrl();
+
+      if (scraperUrl) {
+        try {
+          const resp = await axios.post(
+            `${scraperUrl}/api/control/site`,
+            { site: siteId, action: 'run' },
+            { timeout: 5000 }
+          );
+          return res.json(resp.data);
+        } catch (apiErr: any) {
+          console.warn(`[SCRAPER_APP_URL] Run trigger notice for ${siteId}: ${apiErr?.message}`);
+        }
+      }
+
+      res.json({ success: true, message: `Scraper execution requested for "${siteId}"` });
     } catch (error: any) {
       console.error(`[SiteScraper API] Failed to run scraper ${req.params.id}:`, error);
       res.status(500).json({ error: error.message || 'Failed to start scraper' });
     }
   });
 
+  // 5. POST /api/scrapers/:id/stop - Stop a single site scraper
   app.post('/api/scrapers/:id/stop', async (req, res) => {
     try {
       const siteId = req.params.id;
+      const scraperUrl = getScraperAppUrl();
+
+      if (scraperUrl) {
+        try {
+          await axios.post(
+            `${scraperUrl}/api/control/site`,
+            { site: siteId, action: 'stop' },
+            { timeout: 5000 }
+          );
+        } catch (apiErr: any) {
+          console.warn(`[SCRAPER_APP_URL] Stop forward notice for ${siteId}: ${apiErr?.message}`);
+        }
+      }
+
       await stopSiteScraper(siteId);
       res.json({ success: true, message: `Scraper stopped for "${siteId}"` });
     } catch (error: any) {
@@ -2839,9 +2931,24 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     }
   });
 
+  // 6. POST /api/scrapers/:id/start - Start/Restart a single site scraper
   app.post('/api/scrapers/:id/start', async (req, res) => {
     try {
       const siteId = req.params.id;
+      const scraperUrl = getScraperAppUrl();
+
+      if (scraperUrl) {
+        try {
+          await axios.post(
+            `${scraperUrl}/api/control/site`,
+            { site: siteId, action: 'start' },
+            { timeout: 5000 }
+          );
+        } catch (apiErr: any) {
+          console.warn(`[SCRAPER_APP_URL] Start forward notice for ${siteId}: ${apiErr?.message}`);
+        }
+      }
+
       await startSiteScraper(siteId);
       res.json({ success: true, message: `Scraper restarted and enabled for "${siteId}"` });
     } catch (error: any) {

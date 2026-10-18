@@ -431,6 +431,7 @@ export interface IScraperSite {
   status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
   total_scraped: number;
   failed_count: number;
+  last_new_posts?: number;
   last_run_at?: Date | null;
   next_run_at?: Date | null;
   last_error?: string | null;
@@ -448,6 +449,7 @@ const ScraperSiteSchema = new mongoose.Schema<IScraperSite>(
     status: { type: String, default: 'idle' },
     total_scraped: { type: Number, default: 0 },
     failed_count: { type: Number, default: 0 },
+    last_new_posts: { type: Number, default: 0 },
     last_run_at: { type: Date, default: null },
     next_run_at: { type: Date, default: null },
     last_error: { type: String, default: null },

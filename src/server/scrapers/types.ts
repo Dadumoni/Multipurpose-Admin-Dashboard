@@ -23,6 +23,7 @@ export interface ScraperSiteInfo {
   status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
   total_scraped: number;
   failed_count: number;
+  last_new_posts?: number;
   last_run_at: string | null;
   next_run_at: string | null;
   last_error: string | null;

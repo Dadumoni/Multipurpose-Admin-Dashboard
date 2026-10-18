@@ -29,6 +29,7 @@ interface ScraperSiteInfo {
   status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
   total_scraped: number;
   failed_count: number;
+  last_new_posts?: number;
   last_run_at: string | null;
   next_run_at: string | null;
   last_error: string | null;
@@ -39,6 +40,36 @@ export default function SiteScraper() {
   const [sites, setSites] = useState<ScraperSiteInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  // External Scraper Engine status (e.g. deployed on Koyeb)
+  const [engineStatus, setEngineStatus] = useState<{
+    online: boolean;
+    configured: boolean;
+    is_running: boolean;
+    active_site: string | null;
+    message: string;
+    app_url: string;
+  }>({
+    online: false,
+    configured: false,
+    is_running: false,
+    active_site: null,
+    message: 'Checking engine status...',
+    app_url: '',
+  });
+  const [masterToggling, setMasterToggling] = useState(false);
+
+  const fetchEngineStatus = async () => {
+    try {
+      const res = await fetch('/api/scrapers/status');
+      if (res.ok) {
+        const data = await res.json();
+        setEngineStatus(data);
+      }
+    } catch (err: any) {
+      console.warn('Failed to fetch scraper engine status:', err.message);
+    }
+  };
 
   const fetchSites = async () => {
     try {
@@ -58,9 +89,41 @@ export default function SiteScraper() {
 
   useEffect(() => {
     fetchSites();
-    const interval = setInterval(fetchSites, 3000);
+    fetchEngineStatus();
+    const interval = setInterval(() => {
+      fetchSites();
+      fetchEngineStatus();
+    }, 4000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleToggleMaster = async () => {
+    const nextAction = engineStatus.is_running ? 'pause' : 'resume';
+    setMasterToggling(true);
+    try {
+      const res = await fetch('/api/scrapers/master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: nextAction }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(
+          nextAction === 'pause'
+            ? 'All site scrapers paused. Scraper engine is idling.'
+            : 'All active site scrapers resumed successfully!'
+        );
+        fetchEngineStatus();
+        fetchSites();
+      } else {
+        toast.error(data.error || 'Failed to toggle master scraper');
+      }
+    } catch (err: any) {
+      toast.error('Network error toggling master scraper: ' + err.message);
+    } finally {
+      setMasterToggling(false);
+    }
+  };
 
   const handleRunNow = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
@@ -134,21 +197,78 @@ export default function SiteScraper() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Link
-            to="/logs"
-            className="h-9 px-3.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-xs font-medium text-zinc-700 dark:text-zinc-300 inline-flex items-center gap-1.5 shadow-xs transition-colors"
-          >
-            <Terminal className="h-4 w-4" />
-            <span>Terminal Logs</span>
-          </Link>
+        {/* Replaced Header Buttons: Engine Health Indicator & Animated Master Stop/Resume */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Indicator 1: Engine Status (Running vs Stopped vs Offline) */}
+          {engineStatus.online ? (
+            engineStatus.is_running ? (
+              <div 
+                className="h-9 px-3 rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium inline-flex items-center gap-2 shadow-xs"
+                title={engineStatus.app_url ? `Connected to ${engineStatus.app_url}` : 'Scraper Engine is Online'}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>Engine Running</span>
+              </div>
+            ) : (
+              <div 
+                className="h-9 px-3 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-medium inline-flex items-center gap-2 shadow-xs"
+                title="Scraper process is currently paused by master switch"
+              >
+                <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                <span>Scrapers Paused</span>
+              </div>
+            )
+          ) : (
+            <div 
+              className="h-9 px-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 text-xs font-medium inline-flex items-center gap-2 shadow-xs"
+              title={engineStatus.configured ? 'External Koyeb scraper service is unreachable or asleep' : 'SCRAPER_APP_URL is not configured'}
+            >
+              <span className="h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-600"></span>
+              <span>Engine {engineStatus.configured ? 'Sleeping/Offline' : 'Not Configured'}</span>
+            </div>
+          )}
+
+          {/* Indicator 2: Master Stop/Resume Button with animated Play/Pause transition */}
+          {engineStatus.online && (
+            engineStatus.is_running ? (
+              <button
+                type="button"
+                onClick={handleToggleMaster}
+                disabled={masterToggling}
+                className="h-9 px-3.5 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer group disabled:opacity-50"
+                title="Pause all site scrapers (service remains alive, stops scraping loop)"
+              >
+                <Pause className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 transition-transform group-hover:scale-110" />
+                <span>Pause Scrapers</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleToggleMaster}
+                disabled={masterToggling}
+                className="h-9 px-3.5 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer group disabled:opacity-50 animate-pulse"
+                title="Resume scraping across all enabled sites"
+              >
+                <Play className="h-3.5 w-3.5 fill-current transition-transform group-hover:scale-110" />
+                <span>Resume Scrapers</span>
+              </button>
+            )
+          )}
+
+          {/* Refresh Action */}
           <button
             type="button"
-            onClick={fetchSites}
-            className="h-9 px-3.5 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-opacity cursor-pointer"
+            onClick={() => {
+              fetchSites();
+              fetchEngineStatus();
+            }}
+            className="h-9 w-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 inline-flex items-center justify-center shadow-xs transition-colors cursor-pointer"
+            title="Refresh status and telemetry"
           >
             <RotateCw className="h-3.5 w-3.5" />
-            <span>Refresh</span>
           </button>
         </div>
       </div>
@@ -271,7 +391,7 @@ export default function SiteScraper() {
                         ) : null}
                       </div>
 
-                      {/* Schedule and Last Run */}
+                      {/* Schedule, Last Scan, Next Scan, and New in Last Scan */}
                       <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3 text-zinc-400" />
@@ -279,16 +399,20 @@ export default function SiteScraper() {
                         </span>
                         <span className="text-zinc-300 dark:text-zinc-700">•</span>
                         <span>
-                          Last Run: {site.last_run_at ? format(new Date(site.last_run_at), 'dd MMM yyyy, HH:mm') : 'Never'}
+                          Last Scan: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{site.last_run_at ? format(new Date(site.last_run_at), 'dd MMM yyyy, HH:mm') : 'Never'}</strong>
                         </span>
                         {site.next_run_at && (
                           <>
                             <span className="text-zinc-300 dark:text-zinc-700">•</span>
                             <span>
-                              Next: {format(new Date(site.next_run_at), 'dd MMM, HH:mm')}
+                              Next Scan: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{format(new Date(site.next_run_at), 'dd MMM, HH:mm')}</strong>
                             </span>
                           </>
                         )}
+                        <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-semibold border border-emerald-200 dark:border-emerald-800/60">
+                          +{site.last_new_posts ?? 0} new
+                        </span>
                       </div>
                     </div>
 
