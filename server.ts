@@ -947,6 +947,16 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
       if (req.query.expired_only === 'true' || req.query.expired === 'true') {
         andConditions.push({ is_expired: true });
       }
+      if (req.query.missing_thumbnail === 'true' || req.query.missing_thumbs === 'true') {
+        andConditions.push({
+          $or: [
+            { thumbnail_url: null },
+            { thumbnail_url: '' },
+            { thumbnail_url: 'null' },
+            { thumbnail_url: { $exists: false } }
+          ]
+        });
+      }
       if (domainParam && domainParam !== 'all') {
         const cleanDomain = domainParam.replace(/^www\./, '');
         andConditions.push({
@@ -1338,34 +1348,57 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     if (!url || typeof url !== 'string' || !url.startsWith('http')) return false;
     if (signal?.aborted) return false;
     try {
-      const res = await axios.head(url, {
-        timeout: 3000,
+      const res = await axios.get(url, {
+        timeout: 4000,
         signal,
+        headers: {
+          'Referer': '',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Range': 'bytes=0-1024',
+          'Accept': '*/*',
+        },
         validateStatus: () => true,
+        responseType: 'stream',
         httpAgent: httpCheckAgent,
         httpsAgent: httpsCheckAgent,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
       });
-      if (res.status === 405 || res.status === 403) {
-        if (signal?.aborted) return false;
-        const getRes = await axios.get(url, {
-          timeout: 3000,
-          signal,
-          headers: { Range: 'bytes=0-0', 'User-Agent': 'Mozilla/5.0' },
-          validateStatus: () => true,
-          responseType: 'stream',
-          httpAgent: httpCheckAgent,
-          httpsAgent: httpsCheckAgent,
-        });
-        if (getRes.data && typeof getRes.data.destroy === 'function') {
-          getRes.data.destroy();
-        }
-        return getRes.status < 400;
+      if (res.data && typeof res.data.destroy === 'function') {
+        res.data.destroy();
       }
-      return res.status < 400;
+      return res.status >= 200 && res.status < 400;
     } catch {
       return false;
     }
+  }
+
+  async function checkPostLinks(p: any, signal?: AbortSignal): Promise<boolean> {
+    const candidateUrls: string[] = [];
+    if (p['720p_link'] && typeof p['720p_link'] === 'string' && p['720p_link'].startsWith('http')) {
+      candidateUrls.push(p['720p_link']);
+    }
+    if (p['480p_link'] && typeof p['480p_link'] === 'string' && p['480p_link'].startsWith('http')) {
+      if (!candidateUrls.includes(p['480p_link'])) candidateUrls.push(p['480p_link']);
+    }
+    if (p.video_url && typeof p.video_url === 'string' && p.video_url.startsWith('http')) {
+      if (!candidateUrls.includes(p.video_url)) candidateUrls.push(p.video_url);
+    }
+    if (Array.isArray(p.all_links)) {
+      for (const l of p.all_links) {
+        if (l && typeof l === 'string' && l.startsWith('http') && !candidateUrls.includes(l)) {
+          candidateUrls.push(l);
+        }
+      }
+    }
+
+    if (candidateUrls.length === 0) return false;
+
+    // Test 720p first, then 480p: if ANY stream link works, the video is NOT expired!
+    for (const u of candidateUrls) {
+      if (signal?.aborted) return false;
+      const ok = await checkSingleUrl(u, signal);
+      if (ok) return true;
+    }
+    return false;
   }
 
   async function startCheckExpired() {
@@ -1391,11 +1424,11 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
         startedAt: new Date(),
         completedAt: null,
         cancelRequested: false,
-        message: 'Scanning all video links in background...',
+        message: 'Scanning all video links in background (720p & 480p with no-referrer)...',
       };
       broadcastCheckExpiredState();
 
-      const batchSize = 30;
+      const batchSize = 25;
       for (let i = 0; i < allPosts.length; i += batchSize) {
         if (signal.aborted || checkExpiredState.cancelRequested) {
           break;
@@ -1405,8 +1438,7 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
         const results = await Promise.all(
           batch.map(async (p: any) => {
             if (signal.aborted) return { _id: p._id, id: p.id, ok: false, wasExpired: Boolean(p.is_expired) };
-            const targetUrl = p['720p_link'] || p['480p_link'] || (Array.isArray(p.all_links) && p.all_links[0]) || p.video_url;
-            const ok = await checkSingleUrl(targetUrl, signal);
+            const ok = await checkPostLinks(p, signal);
             return { _id: p._id, id: p.id, ok, wasExpired: Boolean(p.is_expired) };
           })
         );
@@ -1594,6 +1626,48 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     } catch (error: any) {
       console.error('Failed to update expired status:', error);
       res.status(500).json({ error: error.message || 'Failed to update expired status' });
+    }
+  });
+
+  // GET /api/posts/check-list - Streamlined list of video URLs for browser background HTML5 verification
+  app.get('/api/posts/check-list', async (req, res) => {
+    try {
+      await connectToDatabase();
+      const limit = Math.min(10000, parseInt(req.query.limit as string) || 3000);
+      const query: any = {};
+      if (req.query.domain && req.query.domain !== 'all') {
+        const cleanDomain = (req.query.domain as string).replace(/^www\./, '');
+        query.$or = [
+          { domain: { $regex: cleanDomain, $options: 'i' } },
+          { post_url: { $regex: cleanDomain, $options: 'i' } }
+        ];
+      }
+      const posts = await PostModel.find(query, {
+        _id: 1,
+        id: 1,
+        video_id: 1,
+        '720p_link': 1,
+        '480p_link': 1,
+        video_url: 1,
+        all_links: 1,
+        is_expired: 1,
+      }).limit(limit).lean();
+
+      res.json({
+        success: true,
+        total: posts.length,
+        posts: posts.map((p: any) => ({
+          _id: String(p._id),
+          id: p.id !== undefined && p.id !== null ? p.id : (p.video_id || String(p._id)),
+          link_720p: p['720p_link'] || null,
+          link_480p: p['480p_link'] || null,
+          video_url: p.video_url || null,
+          all_links: Array.isArray(p.all_links) ? p.all_links : [],
+          is_expired: Boolean(p.is_expired),
+        })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to fetch check list' });
     }
   });
 
@@ -2418,6 +2492,66 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
           const browserCount: Record<string, number> = {};
           let monthMatchingRows = 0;
 
+          const normalizeDevice = (val: string) => {
+            if (!val) return 'Desktop';
+            const o = val.toLowerCase();
+            if (o.includes('win')) return 'Windows';
+            if (o.includes('android')) return 'Android';
+            if (o.includes('ios') || o.includes('iphone') || o.includes('ipad')) return 'iOS';
+            if (o.includes('mac')) return 'macOS';
+            if (o.includes('linux')) return 'Linux';
+            return val.trim() || 'Desktop';
+          };
+
+          const normalizeCountry = (val: string) => {
+            if (!val) return 'Unknown';
+            const trimmed = val.trim();
+            const code = trimmed.split(/[, -]/)[0].trim().toUpperCase();
+            const countryMap: Record<string, string> = {
+              IN: 'India',
+              US: 'United States',
+              BD: 'Bangladesh',
+              PK: 'Pakistan',
+              GB: 'United Kingdom',
+              UK: 'United Kingdom',
+              CA: 'Canada',
+              AU: 'Australia',
+              DE: 'Germany',
+              FR: 'France',
+              NP: 'Nepal',
+              AE: 'United Arab Emirates',
+              SA: 'Saudi Arabia',
+              RU: 'Russia',
+              BR: 'Brazil',
+              ID: 'Indonesia',
+              PH: 'Philippines',
+              MY: 'Malaysia',
+              SG: 'Singapore',
+            };
+            if (countryMap[code]) return countryMap[code];
+            if (countryMap[trimmed.toUpperCase()]) return countryMap[trimmed.toUpperCase()];
+            if (trimmed.includes(',')) {
+              const parts = trimmed.split(',').map(s => s.trim());
+              if (parts[0].length === 2 && countryMap[parts[0].toUpperCase()]) {
+                return countryMap[parts[0].toUpperCase()];
+              }
+            }
+            return trimmed;
+          };
+
+          const normalizeBrowser = (val: string) => {
+            if (!val) return 'Chrome';
+            const b = val.toLowerCase();
+            if (b.includes('telegram')) return 'Telegram In-App';
+            if (b.includes('brave') || b.includes('ucbrowser') || b.includes('uc browser')) return 'Brave / UC Browser';
+            if (b.includes('firefox') || b.includes('fxios')) return 'Firefox / Edge';
+            if (b.includes('edge') || b.includes('edg')) return 'Firefox / Edge';
+            if (b.includes('safari') && !b.includes('chrome')) return 'Safari';
+            if (b.includes('chrome') || b.includes('crios')) return 'Chrome';
+            if (b.includes('opera') || b.includes('opr')) return 'Opera';
+            return val.trim() || 'Chrome';
+          };
+
           for (const row of supabaseVisitors) {
             if (row.ip) {
               uniqueIps.add(row.ip);
@@ -2431,66 +2565,6 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
             const isMatchMonth = rowTime
               ? new Date(rowTime) >= startOfMonth && new Date(rowTime) <= endOfMonth
               : true;
-
-            const normalizeDevice = (val: string) => {
-              if (!val) return 'Desktop';
-              const o = val.toLowerCase();
-              if (o.includes('win')) return 'Windows';
-              if (o.includes('android')) return 'Android';
-              if (o.includes('ios') || o.includes('iphone') || o.includes('ipad')) return 'iOS';
-              if (o.includes('mac')) return 'macOS';
-              if (o.includes('linux')) return 'Linux';
-              return val.trim() || 'Desktop';
-            };
-
-            const normalizeCountry = (val: string) => {
-              if (!val) return 'Unknown';
-              const trimmed = val.trim();
-              const code = trimmed.split(/[, -]/)[0].trim().toUpperCase();
-              const countryMap: Record<string, string> = {
-                IN: 'India',
-                US: 'United States',
-                BD: 'Bangladesh',
-                PK: 'Pakistan',
-                GB: 'United Kingdom',
-                UK: 'United Kingdom',
-                CA: 'Canada',
-                AU: 'Australia',
-                DE: 'Germany',
-                FR: 'France',
-                NP: 'Nepal',
-                AE: 'United Arab Emirates',
-                SA: 'Saudi Arabia',
-                RU: 'Russia',
-                BR: 'Brazil',
-                ID: 'Indonesia',
-                PH: 'Philippines',
-                MY: 'Malaysia',
-                SG: 'Singapore',
-              };
-              if (countryMap[code]) return countryMap[code];
-              if (countryMap[trimmed.toUpperCase()]) return countryMap[trimmed.toUpperCase()];
-              if (trimmed.includes(',')) {
-                const parts = trimmed.split(',').map(s => s.trim());
-                if (parts[0].length === 2 && countryMap[parts[0].toUpperCase()]) {
-                  return countryMap[parts[0].toUpperCase()];
-                }
-              }
-              return trimmed;
-            };
-
-            const normalizeBrowser = (val: string) => {
-              if (!val) return 'Chrome';
-              const b = val.toLowerCase();
-              if (b.includes('telegram')) return 'Telegram In-App';
-              if (b.includes('brave') || b.includes('ucbrowser') || b.includes('uc browser')) return 'Brave / UC Browser';
-              if (b.includes('firefox') || b.includes('fxios')) return 'Firefox / Edge';
-              if (b.includes('edge') || b.includes('edg')) return 'Firefox / Edge';
-              if (b.includes('safari') && !b.includes('chrome')) return 'Safari';
-              if (b.includes('chrome') || b.includes('crios')) return 'Chrome';
-              if (b.includes('opera') || b.includes('opr')) return 'Opera';
-              return val.trim() || 'Chrome';
-            };
 
             if (isMatchMonth) {
               monthMatchingRows++;
@@ -2682,20 +2756,64 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     try {
       const stats = await getDashboardStats(req.query.force === 'true');
       const sb = getSupabaseBackupClient();
+      let missing_thumbnails = 0;
       if (sb) {
         try {
-          const { data } = await sb.from('viralhub_db').select('views');
-          if (data && Array.isArray(data)) {
-            const sbViews = data.reduce((acc: number, r: any) => acc + (Number(r.views) || 0), 0);
+          const [viewsRes, missingRes] = await Promise.all([
+            sb.from('viralhub_db').select('views'),
+            sb.from('viralhub_db').select('*', { count: 'exact', head: true }).or('thumbnail_url.is.null,thumbnail_url.eq.,thumbnail_url.eq.null')
+          ]);
+          if (viewsRes.data && Array.isArray(viewsRes.data)) {
+            const sbViews = viewsRes.data.reduce((acc: number, r: any) => acc + (Number(r.views) || 0), 0);
             if (sbViews > 0 && stats) {
               (stats as any).total_views = sbViews;
             }
           }
-        } catch {}
+          if (typeof missingRes.count === 'number') {
+            missing_thumbnails = missingRes.count;
+          }
+        } catch (sbErr: any) {
+          console.warn('[Supabase Stats] Error:', sbErr.message);
+        }
       }
-      res.json({ success: true, stats });
+      if (stats) {
+        (stats as any).missing_thumbnails = missing_thumbnails;
+      }
+      res.json({ success: true, stats: { ...stats, missing_thumbnails } });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch dashboard stats' });
+    }
+  });
+
+  // Dedicated endpoint for exact Supabase missing thumbnail count
+  app.get('/api/posts/missing-thumbnails/count', async (_req, res) => {
+    try {
+      const sb = getSupabaseBackupClient();
+      if (sb) {
+        try {
+          const { count, error } = await sb
+            .from('viralhub_db')
+            .select('*', { count: 'exact', head: true })
+            .or('thumbnail_url.is.null,thumbnail_url.eq.,thumbnail_url.eq.null');
+          if (!error && typeof count === 'number') {
+            return res.json({ count });
+          }
+        } catch (sbErr: any) {
+          console.warn('[Supabase] Missing thumbnail count error:', sbErr.message);
+        }
+      }
+      await connectToDatabase();
+      const count = await PostModel.countDocuments({
+        $or: [
+          { thumbnail_url: null },
+          { thumbnail_url: '' },
+          { thumbnail_url: 'null' },
+          { thumbnail_url: { $exists: false } }
+        ]
+      });
+      res.json({ count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to fetch missing thumbnails count' });
     }
   });
 

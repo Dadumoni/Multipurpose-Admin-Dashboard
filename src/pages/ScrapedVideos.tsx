@@ -24,6 +24,7 @@ import {
 } from '@/src/lib/supabase';
 import { getClientCache, setClientCache, invalidateClientCache } from '@/src/lib/clientCache';
 import { generateMultiGridThumbnail } from '@/src/lib/thumbnailGenerator';
+import { batchCheckPostVideoLinks, VideoPostToCheck } from '@/src/lib/videoChecker';
 
 // Modular Subcomponents
 import { 
@@ -50,6 +51,7 @@ export default function ScrapedVideos() {
   const [totalPostsCount, setTotalPostsCount] = useState<number>(0);
   const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
   const [totalViewsCount, setTotalViewsCount] = useState<number>(0);
+  const [missingThumbnailCount, setMissingThumbnailCount] = useState<number>(0);
   const [domainSources, setDomainSources] = useState<Array<{ domain: string; count: number }>>(() => {
     const cachedStats = getClientCache<any>('dashboard_stats_overview');
     if (cachedStats && Array.isArray(cachedStats.video_sources)) {
@@ -139,6 +141,7 @@ export default function ScrapedVideos() {
   const sseRef = useRef<EventSource | null>(null);
   const pollTimerRef = useRef<any>(null);
   const thumbnailAbortRef = useRef<AbortController | null>(null);
+  const browserCheckAbortRef = useRef<AbortController | null>(null);
 
   // Handler to select and filter by domain
   const handleSelectDomain = (domain: string) => {
@@ -215,6 +218,9 @@ export default function ScrapedVideos() {
         if (typeof data.total_views === 'number') {
           setTotalViewsCount(data.total_views);
         }
+        if (typeof data.missing_thumbnails === 'number') {
+          setMissingThumbnailCount(data.missing_thumbnails);
+        }
         if (Array.isArray(data.video_sources) && data.video_sources.length > 0) {
           setDomainSources(data.video_sources.map((s: any) => ({
             domain: s.domain,
@@ -225,6 +231,21 @@ export default function ScrapedVideos() {
       }
     } catch (e) {
       console.warn('Overview stats fetch notice:', e);
+    }
+  }, []);
+
+  // Fetch Exact Missing Thumbnails Count from Supabase
+  const fetchMissingThumbnailCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/posts/missing-thumbnails/count');
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.count === 'number') {
+          setMissingThumbnailCount(data.count);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch missing thumbnail count notice:', e);
     }
   }, []);
 
@@ -261,6 +282,7 @@ export default function ScrapedVideos() {
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (sourceFilter && sourceFilter !== 'all') params.set('domain', sourceFilter);
       if (isViewingExpired) params.set('expired_only', 'true');
+      if (isViewingMissingThumbs) params.set('missing_thumbnail', 'true');
 
       const res = await fetch(`/api/posts?${params.toString()}`);
       if (res.ok) {
@@ -302,7 +324,7 @@ export default function ScrapedVideos() {
 
           setVideos(mappedVideos);
           setTotalFilteredCount(mongoData.total ?? mappedVideos.length);
-          if (!debouncedSearch && sourceFilter === 'all' && !isViewingExpired) {
+          if (!debouncedSearch && sourceFilter === 'all' && !isViewingExpired && !isViewingMissingThumbs) {
             setTotalPostsCount(mongoData.total ?? mappedVideos.length);
           }
           setLoading(false);
@@ -321,13 +343,14 @@ export default function ScrapedVideos() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, sortOrder, debouncedSearch, sourceFilter, isViewingExpired]);
+  }, [currentPage, pageSize, sortOrder, debouncedSearch, sourceFilter, isViewingExpired, isViewingMissingThumbs]);
 
-  // Initial load: overview stats + expired count + paginated videos
+  // Initial load: overview stats + expired count + missing thumbnail count + paginated videos
   useEffect(() => {
     fetchOverviewStats();
     fetchExpiredStatus();
-  }, [fetchOverviewStats, fetchExpiredStatus]);
+    fetchMissingThumbnailCount();
+  }, [fetchOverviewStats, fetchExpiredStatus, fetchMissingThumbnailCount]);
 
   useEffect(() => {
     fetchVideos();
@@ -422,32 +445,104 @@ export default function ScrapedVideos() {
     if (isCheckingExpired) return;
     try {
       setIsCheckingExpired(true);
-      connectExpiredCheckSSE();
-      const res = await fetch('/api/posts/check-expired', { method: 'POST' });
-      if (res.ok) {
-        toast.info('Persistent server background check started for all video links...');
-      } else {
-        throw new Error('Server error starting check');
+      browserCheckAbortRef.current = new AbortController();
+      const signal = browserCheckAbortRef.current.signal;
+
+      toast.info('Fetching video stream links for background HTML5 player verification...');
+      const listUrl = `/api/posts/check-list${sourceFilter !== 'all' ? `?domain=${encodeURIComponent(sourceFilter)}` : ''}`;
+      const listRes = await fetch(listUrl);
+      let postsToCheck: VideoPostToCheck[] = [];
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        if (Array.isArray(listData.posts) && listData.posts.length > 0) {
+          postsToCheck = listData.posts;
+        }
+      }
+
+      // Fallback to currently loaded videos if check-list is empty
+      if (postsToCheck.length === 0 && videos.length > 0) {
+        postsToCheck = videos.map(v => ({
+          _id: v._id,
+          id: v.id,
+          link_720p: v['720p_link'] || v.video_url2,
+          link_480p: v['480p_link'] || v.video_url1,
+          video_url: v.video_url,
+          all_links: v.all_links,
+          is_expired: v.is_expired,
+          title: v.title,
+        }));
+      }
+
+      if (postsToCheck.length === 0) {
+        setIsCheckingExpired(false);
+        toast.info('No videos available to check.');
+        return;
+      }
+
+      setCheckProgress({
+        total: postsToCheck.length,
+        checked: 0,
+        expiredCount: 0,
+        recoveredCount: 0,
+        newlyExpiredCount: 0,
+        status: 'running',
+        message: 'Opening 720p & 480p links in background HTML5 player (no-referrer)...',
+      });
+
+      // Run background HTML5 player verification with controlled concurrency
+      const result = await batchCheckPostVideoLinks(
+        postsToCheck,
+        4,
+        (progress) => {
+          setCheckProgress(prev => ({
+            ...prev,
+            total: progress.total,
+            checked: progress.checked,
+            expiredCount: progress.expiredCount,
+            recoveredCount: progress.recoveredCount,
+            activeCount: progress.activeCount,
+            message: `Verified ${progress.checked}/${progress.total} in HTML5 background player (${Math.round((progress.checked / Math.max(1, progress.total)) * 100)}%)`,
+          }));
+        },
+        async (batch) => {
+          // Sync batch with database in real time
+          await fetch('/api/posts/mark-expired', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(batch),
+          });
+        },
+        signal
+      );
+
+      if (!signal.aborted) {
+        toast.success(`HTML5 verification complete: ${result.validIds.length} active links, ${result.expiredIds.length} expired (${result.recoveredCount} restored active)`);
+        fetchExpiredStatus(true);
+        fetchVideos(true);
       }
     } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        toast.error('Background link check notice: ' + (err.message || 'Error'));
+      }
+    } finally {
       setIsCheckingExpired(false);
-      toast.error('Failed to start expired check: ' + (err.message || 'Error'));
+      browserCheckAbortRef.current = null;
     }
   };
 
   const handleCancelCheckExpired = async () => {
-    try {
-      toast.info('Cancelling scan on server...');
-      const res = await fetch('/api/posts/check-expired/stop', { method: 'POST' });
-      if (res.ok) {
-        setIsCheckingExpired(false);
-        toast.info('Link check cancelled');
-        fetchVideos(true);
-        fetchExpiredStatus(true);
-      }
-    } catch (err: any) {
-      toast.error('Failed to cancel scan: ' + err.message);
+    if (browserCheckAbortRef.current) {
+      browserCheckAbortRef.current.abort();
+      browserCheckAbortRef.current = null;
     }
+    try {
+      await fetch('/api/posts/check-expired/stop', { method: 'POST' });
+    } catch {}
+    setIsCheckingExpired(false);
+    setCheckProgress(prev => ({ ...prev, status: 'cancelled', message: 'Scan cancelled by user' }));
+    toast.info('Link check cancelled');
+    fetchVideos(true);
+    fetchExpiredStatus(true);
   };
 
   useEffect(() => {
@@ -859,16 +954,9 @@ export default function ScrapedVideos() {
     return counts;
   }, [domainSources]);
 
-  const missingThumbnailCount = useMemo(() => {
-    return videos.filter(v => !v.thumbnail_url || !v.thumbnail_url.trim() || v.thumbnail_url === 'null').length;
-  }, [videos]);
-
   const displayedVideos = useMemo(() => {
-    if (isViewingMissingThumbs) {
-      return videos.filter(v => !v.thumbnail_url || !v.thumbnail_url.trim() || v.thumbnail_url === 'null');
-    }
     return videos;
-  }, [videos, isViewingMissingThumbs]);
+  }, [videos]);
 
   return (
     <div className="p-6 space-y-6">
