@@ -346,19 +346,26 @@ export default function Overview() {
       </div>
 
       {/* 4 STAT CARDS */}
+      {/* 4 STAT CARDS - Synchronized with All Videos */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Videos (Mongo DB) */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+        {/* Card 1: Total Videos (Matching All Videos Total Posts) */}
+        <Link 
+          to="/scraped"
+          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
+          title="Click to view All Videos"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              TOTAL VIDEOS <span className="font-mono text-xs normal-case font-normal text-zinc-500 dark:text-zinc-400 tracking-normal">(Mongo DB)</span>
+              Total Videos
             </span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
+            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
               <Video className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white">{stats.totalVideos}</div>
+            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
+              {stats.totalScraped.toLocaleString()}
+            </div>
             
             {/* Dynamic Trend Indicator for TOTAL VIDEOS */}
             {stats.videoTrend?.direction === 'increase' && (
@@ -376,11 +383,11 @@ export default function Overview() {
             {(!stats.videoTrend || stats.videoTrend?.direction === 'neutral') && (
               <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                 <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span>{stats.videoTrend?.label || 'No change since yesterday'}</span>
+                <span>{stats.videoTrend?.label || 'In public collection'}</span>
               </div>
             )}
           </div>
-        </div>
+        </Link>
 
         {/* Card 2: Total Views */}
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
@@ -417,35 +424,49 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Card 3: Total Videos (Supabase) */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+        {/* Card 3: Scraper Sources */}
+        <Link
+          to="/scrapers"
+          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
+          title="Click to view Scraper Sites"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              TOTAL VIDEOS <span className="font-mono text-xs normal-case font-normal text-zinc-500 dark:text-zinc-400 tracking-normal">(Supabase)</span>
+              Video Sources
             </span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
-              <Film className="h-4 w-4" />
+            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
+              <Globe className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white">{stats.totalScraped}</div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 font-mono">Supabase all_videos_db / viralhub_db</div>
+            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
+              {stats.videoSources?.length || 0} Domains
+            </div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Active crawling sources
+            </div>
           </div>
-        </div>
+        </Link>
 
         {/* Card 4: Telegram Upload */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+        <Link
+          to="/uploaded"
+          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
+          title="Click to view Telegram Uploads"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Telegram Upload</span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
+            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
               <Upload className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white">{stats.totalUploaded}</div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Telegram uploaded</div>
+            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
+              {stats.totalUploaded.toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Telegram bot uploads</div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* DAILY TRAFFIC LINE GRAPH WITH MONTH/YEAR PICKER CONTROLS */}

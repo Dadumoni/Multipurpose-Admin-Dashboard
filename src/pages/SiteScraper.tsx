@@ -143,6 +143,25 @@ export default function SiteScraper() {
     }
   };
 
+  const handleFullScan = async (siteId: string, siteName: string) => {
+    setActionInProgress(siteId);
+    try {
+      const res = await fetch(`/api/scrapers/${siteId}/full-scan`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`Full Scan queued for "${siteName}". All other site scans are postponed until complete.`);
+        fetchSites();
+        fetchEngineStatus();
+      } else {
+        toast.error(data.error || data.message || 'Failed to start full scan');
+      }
+    } catch (err: any) {
+      toast.error('Network error starting full scan: ' + err.message);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
   const handleStop = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
     try {
@@ -337,7 +356,7 @@ export default function SiteScraper() {
             <span>Target Site Scrapers</span>
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Each website runs its dedicated parser module in <code>src/server/scrapers/</code>.
+            Each website runs its dedicated background scraper on Koyeb (dual sync to MongoDB & Supabase).
           </p>
         </div>
 
@@ -426,9 +445,9 @@ export default function SiteScraper() {
                       </div>
                     </div>
 
-                    {/* Right side: Button-sized Scraped/Failed Box & Action Buttons */}
+                    {/* Right side: Button-sized Scraped Box & Action Buttons */}
                     <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                      {/* Scraped & Failed pill - clickable to view & filter in My Files */}
+                      {/* Scraped count pill - clickable to view & filter in My Files */}
                       <button
                         type="button"
                         onClick={() => navigate(`/scraped?domain=${encodeURIComponent(site.domain)}#my-files-card`)}
@@ -438,11 +457,6 @@ export default function SiteScraper() {
                         <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Scraped:</span>
                         <span className="font-bold text-black dark:text-white group-hover:underline">
                           {(site.total_scraped || 0).toLocaleString()}
-                        </span>
-                        <span className="text-zinc-300 dark:text-zinc-700">|</span>
-                        <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Failed:</span>
-                        <span className={`font-bold ${site.failed_count > 0 ? 'text-red-500' : 'text-zinc-400'}`}>
-                          {(site.failed_count || 0).toLocaleString()}
                         </span>
                         <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-transform group-hover:translate-x-0.5" />
                       </button>
@@ -472,7 +486,7 @@ export default function SiteScraper() {
                         </button>
                       )}
 
-                      {/* Run Now Trigger */}
+                      {/* Run Now Trigger (Incremental) */}
                       <button
                         type="button"
                         disabled={busy || isRunning}
@@ -482,6 +496,18 @@ export default function SiteScraper() {
                       >
                         <RotateCw className={`h-3 w-3 ${isRunning || busy ? 'animate-spin' : ''}`} />
                         <span>{isRunning ? 'Scanning...' : 'Run Now'}</span>
+                      </button>
+
+                      {/* Full Scan Trigger */}
+                      <button
+                        type="button"
+                        disabled={busy || isRunning}
+                        onClick={() => handleFullScan(site.id, site.name)}
+                        className="h-8 px-2.5 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Run Full Scan: Rescans entire site across all pages (postpones other scheduled scans until complete)"
+                      >
+                        <RotateCw className={`h-3 w-3 ${busy ? 'animate-spin' : ''}`} />
+                        <span>Full Scan</span>
                       </button>
                     </div>
                   </div>

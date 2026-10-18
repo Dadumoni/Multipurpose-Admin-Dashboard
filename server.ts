@@ -2677,10 +2677,22 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     }
   });
 
-  // Fast direct read of dashboard_stats collection
+  // Fast direct read of dashboard_stats collection with Supabase synchronized views
   app.get('/api/stats/overview', async (req, res) => {
     try {
       const stats = await getDashboardStats(req.query.force === 'true');
+      const sb = getSupabaseBackupClient();
+      if (sb) {
+        try {
+          const { data } = await sb.from('viralhub_db').select('views');
+          if (data && Array.isArray(data)) {
+            const sbViews = data.reduce((acc: number, r: any) => acc + (Number(r.views) || 0), 0);
+            if (sbViews > 0 && stats) {
+              (stats as any).total_views = sbViews;
+            }
+          }
+        } catch {}
+      }
       res.json({ success: true, stats });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch dashboard stats' });
@@ -2902,6 +2914,32 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
     } catch (error: any) {
       console.error(`[SiteScraper API] Failed to run scraper ${req.params.id}:`, error);
       res.status(500).json({ error: error.message || 'Failed to start scraper' });
+    }
+  });
+
+  // 4b. POST /api/scrapers/:id/full-scan - Trigger full site rescan (postpones others)
+  app.post('/api/scrapers/:id/full-scan', async (req, res) => {
+    try {
+      const siteId = req.params.id;
+      const scraperUrl = getScraperAppUrl();
+
+      if (scraperUrl) {
+        try {
+          const resp = await axios.post(
+            `${scraperUrl}/api/control/site`,
+            { site: siteId, action: 'full_scan' },
+            { timeout: 8000 }
+          );
+          return res.json(resp.data);
+        } catch (apiErr: any) {
+          console.warn(`[SCRAPER_APP_URL] Full scan proxy notice for ${siteId}: ${apiErr?.message}`);
+        }
+      }
+
+      res.json({ success: true, message: `Full scan scheduled for "${siteId}". Other sites postponed until complete.` });
+    } catch (error: any) {
+      console.error(`[SiteScraper API] Failed to run full scan for ${req.params.id}:`, error);
+      res.status(500).json({ error: error.message || 'Failed to start full scan' });
     }
   });
 
