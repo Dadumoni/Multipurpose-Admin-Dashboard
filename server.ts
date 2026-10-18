@@ -2285,13 +2285,15 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
       // Query Supabase for authoritative total views and visitor daily views
       const sb = getSupabaseBackupClient();
       let supabaseTotalViews = 0;
+      let supabaseTotalCount = 0;
       let supabaseVisitorViewsRows: any[] = [];
 
       if (sb) {
         try {
-          const [viralhubRes, vvRes] = await Promise.all([
+          const [viralhubRes, vvRes, countRes] = await Promise.all([
             sb.from('viralhub_db').select('views'),
             sb.from('visitor_views').select('created_at, updated_at, view_counted').limit(10000),
+            sb.from('viralhub_db').select('*', { count: 'exact', head: true })
           ]);
 
           if (viralhubRes.data && Array.isArray(viralhubRes.data)) {
@@ -2299,6 +2301,9 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
           }
           if (vvRes.data && Array.isArray(vvRes.data)) {
             supabaseVisitorViewsRows = vvRes.data;
+          }
+          if (typeof countRes.count === 'number') {
+            supabaseTotalCount = countRes.count;
           }
         } catch (sbErr) {
           console.warn('Error fetching Supabase overview views:', sbErr);
@@ -2680,12 +2685,14 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
         console.warn('Error fetching visitor stats:', visitorErr);
       }
 
+      const effectiveTotalPosts = supabaseTotalCount > 0 ? supabaseTotalCount : totalScraped;
       const responsePayload = {
         stats: {
-          totalVideos,
+          totalVideos: effectiveTotalPosts,
           totalViews,
-          totalScraped,
+          totalScraped: effectiveTotalPosts,
           totalUploaded,
+          supabaseTotal: supabaseTotalCount,
           currentMonth: monthLong,
           currentYear: targetYear,
           selectedMonth: targetMonth,
@@ -2757,11 +2764,13 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
       const stats = await getDashboardStats(req.query.force === 'true');
       const sb = getSupabaseBackupClient();
       let missing_thumbnails = 0;
+      let supabase_total = 0;
       if (sb) {
         try {
-          const [viewsRes, missingRes] = await Promise.all([
+          const [viewsRes, missingRes, countRes] = await Promise.all([
             sb.from('viralhub_db').select('views'),
-            sb.from('viralhub_db').select('*', { count: 'exact', head: true }).or('thumbnail_url.is.null,thumbnail_url.eq.,thumbnail_url.eq.null')
+            sb.from('viralhub_db').select('*', { count: 'exact', head: true }).or('thumbnail_url.is.null,thumbnail_url.eq.,thumbnail_url.eq.null'),
+            sb.from('viralhub_db').select('*', { count: 'exact', head: true })
           ]);
           if (viewsRes.data && Array.isArray(viewsRes.data)) {
             const sbViews = viewsRes.data.reduce((acc: number, r: any) => acc + (Number(r.views) || 0), 0);
@@ -2772,14 +2781,23 @@ app.get(['/ping', '/api/ping'], (_req, res) => {
           if (typeof missingRes.count === 'number') {
             missing_thumbnails = missingRes.count;
           }
+          if (typeof countRes.count === 'number') {
+            supabase_total = countRes.count;
+            if (stats && supabase_total > 0) {
+              (stats as any).total_posts = supabase_total;
+              (stats as any).total_videos = supabase_total;
+              (stats as any).supabase_total = supabase_total;
+            }
+          }
         } catch (sbErr: any) {
           console.warn('[Supabase Stats] Error:', sbErr.message);
         }
       }
       if (stats) {
         (stats as any).missing_thumbnails = missing_thumbnails;
+        (stats as any).supabase_total = supabase_total;
       }
-      res.json({ success: true, stats: { ...stats, missing_thumbnails } });
+      res.json({ success: true, stats: { ...stats, missing_thumbnails, supabase_total } });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch dashboard stats' });
     }

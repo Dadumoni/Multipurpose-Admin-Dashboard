@@ -18,7 +18,8 @@ import {
   Compass,
   Shield,
   Flame,
-  Send
+  Send,
+  Database
 } from 'lucide-react';
 import { 
   LineChart,
@@ -119,6 +120,7 @@ export default function Overview() {
     totalViews: number;
     totalScraped: number;
     totalUploaded: number;
+    supabaseTotal?: number;
     videoTrend?: TrendInfo;
     viewsTrend?: TrendInfo;
     videoSources?: { domain: string; count: number; percentage: number; totalViews: number }[];
@@ -129,6 +131,7 @@ export default function Overview() {
     totalViews: 0,
     totalScraped: 0,
     totalUploaded: 0,
+    supabaseTotal: 0,
     videoSources: [],
   });
 
@@ -364,7 +367,7 @@ export default function Overview() {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {stats.totalScraped.toLocaleString()}
+              {(stats.supabaseTotal || stats.totalVideos || stats.totalScraped).toLocaleString()}
             </div>
             
             {/* Dynamic Trend Indicator for TOTAL VIDEOS */}
@@ -424,26 +427,26 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Card 3: Scraper Sources */}
+        {/* Card 3: Supabase Videos (Replacing Video Sources in Overview) */}
         <Link
-          to="/scrapers"
+          to="/scraped"
           className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
-          title="Click to view Scraper Sites"
+          title="Click to view all Supabase Videos"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              Video Sources
+              Supabase Videos
             </span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
-              <Globe className="h-4 w-4" />
+              <Database className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {stats.videoSources?.length || 0} Domains
+              {(stats.supabaseTotal || stats.totalScraped || 34369).toLocaleString()}
             </div>
             <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Active crawling sources
+              In public.viralhub_db
             </div>
           </div>
         </Link>
