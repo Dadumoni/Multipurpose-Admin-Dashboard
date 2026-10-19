@@ -77,9 +77,18 @@ export async function getSupabaseDashboardStats(): Promise<ISupabaseDashboardSta
 
 /**
  * Instant O(1) read from MongoDB 'dashboard_stats' collection.
- * Contains lightweight total_videos and total_posts count without scanning collection.
  */
-export async function getMongoDashboardStats(): Promise<{ total_videos: number; total_posts: number; total_uploaded: number; total_views: number }> {
+export interface IMongoDashboardStats {
+  total_videos: number;
+  total_posts: number;
+  total_uploaded: number;
+  total_views: number;
+  total_post_scraped?: number;
+  failed_extractions?: number;
+  sites_scraped?: Record<string, number>;
+}
+
+export async function getMongoDashboardStats(): Promise<IMongoDashboardStats> {
   try {
     await connectToDatabase();
     const doc = await DashboardStatsModel.findOne({ id: 'global_stats' }).lean();
@@ -89,26 +98,40 @@ export async function getMongoDashboardStats(): Promise<{ total_videos: number; 
         total_posts: doc.total_posts || doc.total_videos || 0,
         total_uploaded: doc.total_uploaded || 0,
         total_views: doc.total_views || 0,
+        total_post_scraped: doc.total_post_scraped || doc.total_posts || 0,
+        failed_extractions: doc.failed_extractions || 0,
+        sites_scraped: doc.sites_scraped || {},
       };
     }
 
     // If doc not initialized yet, compute once and save
-    const count = await PostModel.countDocuments();
-    await DashboardStatsModel.updateOne(
-      { id: 'global_stats' },
-      { $set: { total_videos: count, total_posts: count, updated_at: new Date() } },
-      { upsert: true }
-    );
+    const { recalculateStats } = await import('./statsManager.js');
+    const fresh = await recalculateStats();
     return {
-      total_videos: count,
-      total_posts: count,
-      total_uploaded: 0,
-      total_views: 0,
+      total_videos: fresh?.total_videos || 0,
+      total_posts: fresh?.total_posts || 0,
+      total_uploaded: fresh?.total_uploaded || 0,
+      total_views: fresh?.total_views || 0,
+      total_post_scraped: fresh?.total_post_scraped || fresh?.total_posts || 0,
+      failed_extractions: fresh?.failed_extractions || 0,
+      sites_scraped: fresh?.sites_scraped || {},
     };
   } catch (err: any) {
     console.warn('[MongoDB Stats] Failed to fetch dashboard_stats doc:', err.message);
-    return { total_videos: 0, total_posts: 0, total_uploaded: 0, total_views: 0 };
+    return { total_videos: 0, total_posts: 0, total_uploaded: 0, total_views: 0, total_post_scraped: 0, failed_extractions: 0, sites_scraped: {} };
   }
+}
+
+/**
+ * Instant O(1) read for scraper cards and site cards directly from dashboard_stats
+ */
+export async function getScraperDashboardStats(): Promise<{ total_post_scraped: number; failed_extractions: number; sites_scraped: Record<string, number> }> {
+  const stats = await getMongoDashboardStats();
+  return {
+    total_post_scraped: stats.total_post_scraped || 0,
+    failed_extractions: stats.failed_extractions || 0,
+    sites_scraped: stats.sites_scraped || {},
+  };
 }
 
 /**

@@ -220,6 +220,8 @@ export default function SiteScraper() {
     app_url: '',
   });
   const [masterToggling, setMasterToggling] = useState(false);
+  const [totalPostScraped, setTotalPostScraped] = useState<number | null>(null);
+  const [failedExtractions, setFailedExtractions] = useState<number | null>(null);
 
   const fetchEngineStatus = async () => {
     try {
@@ -238,6 +240,12 @@ export default function SiteScraper() {
       const res = await fetch('/api/scrapers');
       if (res.ok) {
         const data = await res.json();
+        if (data.total_post_scraped !== undefined && data.total_post_scraped !== null) {
+          setTotalPostScraped(Number(data.total_post_scraped));
+        }
+        if (data.failed_extractions !== undefined && data.failed_extractions !== null) {
+          setFailedExtractions(Number(data.failed_extractions));
+        }
         if (Array.isArray(data.sites) && data.sites.length > 0) {
           setSites(prev => {
             return prev.map(defaultSite => {
@@ -409,6 +417,9 @@ export default function SiteScraper() {
   const totalFailedAll = uniqueSites.reduce((acc, curr) => acc + (curr.failed_count || 0), 0);
   const activeCount = uniqueSites.filter((s) => s.enabled).length;
 
+  const displayTotalScraped = totalPostScraped !== null ? totalPostScraped : totalScrapedAll;
+  const displayTotalFailed = failedExtractions !== null ? failedExtractions : totalFailedAll;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
       {/* Page Header */}
@@ -524,7 +535,7 @@ export default function SiteScraper() {
             <CheckCircle2 className="h-4 w-4 text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-black dark:text-white group-hover:underline">
-            {totalScrapedAll.toLocaleString()}
+            {displayTotalScraped.toLocaleString()}
           </div>
           <div className="mt-1 text-xs text-zinc-500">
             Click to view all in <strong>My Files</strong>
@@ -536,8 +547,8 @@ export default function SiteScraper() {
             <span>Failed Extractions</span>
             <AlertCircle className="h-4 w-4 text-red-500" />
           </div>
-          <div className={`mt-2 text-2xl font-bold font-mono ${totalFailedAll > 0 ? 'text-red-600 dark:text-red-400' : 'text-black dark:text-white'}`}>
-            {totalFailedAll.toLocaleString()}
+          <div className={`mt-2 text-2xl font-bold font-mono ${displayTotalFailed > 0 ? 'text-red-600 dark:text-red-400' : 'text-black dark:text-white'}`}>
+            {displayTotalFailed.toLocaleString()}
           </div>
           <div className="mt-1 text-xs text-zinc-500">
             Reported stream parse errors

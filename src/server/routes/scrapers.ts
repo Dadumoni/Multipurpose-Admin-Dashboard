@@ -6,7 +6,7 @@ import {
   stopSiteScraper,
   startSiteScraper,
 } from '../scrapers/scraperManager.js';
-import { connectToDatabase, ScraperSiteModel } from '../db.js';
+import { connectToDatabase, ScraperSiteModel, DashboardStatsModel } from '../db.js';
 
 export const scrapersRouter = express.Router();
 
@@ -73,11 +73,25 @@ scrapersRouter.post('/api/scrapers/master', async (req, res) => {
   }
 });
 
-// 3. GET /api/scrapers - List all scraper sites from MongoDB
+// 3. GET /api/scrapers - List all scraper sites from MongoDB (Instant O(1) from dashboard_stats)
 scrapersRouter.get('/api/scrapers', async (_req, res) => {
   try {
-    const sites = await getAllScrapersInfo();
-    res.json({ success: true, sites });
+    await connectToDatabase();
+    const [sites, ds] = await Promise.all([
+      getAllScrapersInfo(),
+      DashboardStatsModel.findOne({ id: 'global_stats' }).lean(),
+    ]);
+
+    const totalScraped = ds?.total_post_scraped ?? sites.reduce((acc, s) => acc + (s.total_scraped || 0), 0);
+    const totalFailed = ds?.failed_extractions ?? sites.reduce((acc, s) => acc + (s.failed_count || 0), 0);
+
+    res.json({
+      success: true,
+      sites,
+      total_post_scraped: totalScraped,
+      failed_extractions: totalFailed,
+      sites_scraped: ds?.sites_scraped || {},
+    });
   } catch (error: any) {
     console.error('[SiteScraper API] Failed to fetch scraper sites:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch scraper sites' });

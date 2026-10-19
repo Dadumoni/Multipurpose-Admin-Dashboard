@@ -297,6 +297,9 @@ export interface IDashboardStats {
   total_uploaded: number;
   total_videos: number;
   total_views: number;
+  total_post_scraped?: number;
+  failed_extractions?: number;
+  sites_scraped?: Record<string, number>;
   video_sources: IDomainSource[];
   recent_posts?: any[];
   last_scraped_at?: Date | null;
@@ -320,6 +323,9 @@ const DashboardStatsSchema = new mongoose.Schema<IDashboardStats>(
     total_uploaded: { type: Number, default: 0 },
     total_videos: { type: Number, default: 0 },
     total_views: { type: Number, default: 0 },
+    total_post_scraped: { type: Number, default: 0 },
+    failed_extractions: { type: Number, default: 0 },
+    sites_scraped: { type: mongoose.Schema.Types.Mixed, default: {} },
     video_sources: { type: [DomainSourceSchema], default: [] },
     recent_posts: { type: [mongoose.Schema.Types.Mixed], default: [] },
     last_scraped_at: { type: Date, default: null },

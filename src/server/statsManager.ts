@@ -72,12 +72,40 @@ export async function recalculateStats(): Promise<IDashboardStats | null> {
       }
     } catch {}
 
+    // Build site-by-site scraped counts and calculate totals
+    const sitesScraped: Record<string, number> = {};
+    for (const item of domainAgg) {
+      if (item._id && item._id !== 'Unknown') {
+        sitesScraped[String(item._id)] = Number(item.count) || 0;
+      }
+    }
+
+    let totalScrapedSum = 0;
+    let totalFailedSum = 0;
+    try {
+      const { ScraperSiteModel } = await import('../lib/mongodb.js');
+      const allSites = await ScraperSiteModel.find({}).lean();
+      for (const s of allSites) {
+        const count = sitesScraped[s.domain] || s.total_scraped || 0;
+        sitesScraped[s.site_id] = count;
+        totalScrapedSum += count;
+        totalFailedSum += (s.failed_count || 0);
+
+        if (s.total_scraped !== count) {
+          await ScraperSiteModel.updateOne({ site_id: s.site_id }, { $set: { total_scraped: count } });
+        }
+      }
+    } catch {}
+
     const payload: Partial<IDashboardStats> = {
       id: 'global_stats',
       total_posts: totalPosts,
       total_uploaded: totalUploaded,
       total_videos: totalVideos,
       total_views: totalViews,
+      total_post_scraped: totalScrapedSum > 0 ? totalScrapedSum : totalPosts,
+      failed_extractions: totalFailedSum,
+      sites_scraped: sitesScraped,
       video_sources: videoSources,
       recent_posts: recentPosts,
       last_scraped_at: lastScrapedAt,
@@ -92,7 +120,7 @@ export async function recalculateStats(): Promise<IDashboardStats | null> {
 
     const elapsed = Date.now() - startTime;
     console.log(
-      `[StatsManager] Recalculated dashboard stats in ${elapsed}ms -> Total Posts: ${totalPosts.toLocaleString()}, Views: ${totalViews.toLocaleString()}, Sources: ${videoSources.length}`
+      `[StatsManager] Recalculated dashboard stats in ${elapsed}ms -> Total Posts: ${totalPosts.toLocaleString()}, Scraped: ${(payload.total_post_scraped || 0).toLocaleString()}, Failed: ${totalFailedSum}, Sources: ${videoSources.length}`
     );
 
     return savedDoc as IDashboardStats;

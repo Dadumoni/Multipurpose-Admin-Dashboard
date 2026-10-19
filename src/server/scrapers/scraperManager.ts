@@ -1,4 +1,4 @@
-import { connectToDatabase, ScraperSiteModel, PostModel } from '../../lib/mongodb.js';
+import { connectToDatabase, ScraperSiteModel, PostModel, DashboardStatsModel } from '../../lib/mongodb.js';
 import { lalamasaScraperModule } from './lalamasa.js';
 import { viralchutScraperModule } from './viralchut.js';
 import { p4455ScraperModule } from './p4455.js';
@@ -293,8 +293,13 @@ export async function getAllScrapersInfo(): Promise<ScraperSiteInfo[]> {
     // Ignore if collection not ready
   }
 
-  const docs = await ScraperSiteModel.find().sort({ site_id: 1 }).lean();
+  // Instant O(1) read from dashboard_stats for site counts instead of scanning PostModel
+  const [docs, ds] = await Promise.all([
+    ScraperSiteModel.find().sort({ site_id: 1 }).lean(),
+    DashboardStatsModel.findOne({ id: 'global_stats' }).lean(),
+  ]);
 
+  const sitesMap = (ds?.sites_scraped as Record<string, number>) || {};
   const seenDomains = new Set<string>();
   const results: ScraperSiteInfo[] = [];
 
@@ -308,7 +313,7 @@ export async function getAllScrapersInfo(): Promise<ScraperSiteInfo[]> {
     }
     seenDomains.add(doc.domain);
 
-    const actualCount = await PostModel.countDocuments({ domain: doc.domain });
+    const actualCount = sitesMap[doc.site_id] ?? sitesMap[doc.domain] ?? doc.total_scraped ?? 0;
     results.push({
       id: doc.site_id,
       name: doc.name,
