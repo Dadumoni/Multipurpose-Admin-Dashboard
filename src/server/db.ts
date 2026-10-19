@@ -7,12 +7,14 @@ import {
   SyncSettingsModel,
   DashboardStatsModel,
   TelegramBotChannelModel,
+  ScraperSiteModel,
   IPost,
   IUploadedVideo,
   ITrackedFile,
   ISyncSettings,
   IDashboardStats,
   ITelegramBotChannel,
+  IScraperSite,
 } from '../lib/mongodb.js';
 
 let _supabaseClient: SupabaseClient | null = null;
@@ -137,6 +139,7 @@ export {
   SyncSettingsModel,
   DashboardStatsModel,
   TelegramBotChannelModel,
+  ScraperSiteModel,
 };
 
 export type {
@@ -146,4 +149,5 @@ export type {
   ISyncSettings,
   IDashboardStats,
   ITelegramBotChannel,
+  IScraperSite,
 };

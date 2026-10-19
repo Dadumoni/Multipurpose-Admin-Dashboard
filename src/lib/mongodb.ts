@@ -433,6 +433,7 @@ export interface IScraperSite {
   failed_count: number;
   last_new_posts?: number;
   last_run_at?: Date | null;
+  last_run_type?: string | null;
   next_run_at?: Date | null;
   last_error?: string | null;
   updated_at?: Date;
@@ -451,6 +452,7 @@ const ScraperSiteSchema = new mongoose.Schema<IScraperSite>(
     failed_count: { type: Number, default: 0 },
     last_new_posts: { type: Number, default: 0 },
     last_run_at: { type: Date, default: null },
+    last_run_type: { type: String, default: 'scheduled' },
     next_run_at: { type: Date, default: null },
     last_error: { type: String, default: null },
     updated_at: { type: Date, default: Date.now },

@@ -6,6 +6,7 @@ import {
   stopSiteScraper,
   startSiteScraper,
 } from '../scrapers/scraperManager.js';
+import { connectToDatabase, ScraperSiteModel } from '../db.js';
 
 export const scrapersRouter = express.Router();
 
@@ -83,11 +84,29 @@ scrapersRouter.get('/api/scrapers', async (_req, res) => {
   }
 });
 
-// 4. POST /api/scrapers/:id/run - Trigger incremental run for a single site
+// 4. POST /api/scrapers/:id/run - Trigger incremental run for a single site (Manual Run)
 scrapersRouter.post('/api/scrapers/:id/run', async (req, res) => {
   try {
     const siteId = req.params.id;
     const scraperUrl = getScraperAppUrl();
+
+    // Mark as manual run in MongoDB immediately; preserve next_run_at schedule unchanged!
+    try {
+      await connectToDatabase();
+      await ScraperSiteModel.updateOne(
+        { site_id: siteId },
+        {
+          $set: {
+            status: 'running',
+            last_run_at: new Date(),
+            last_run_type: 'manual',
+            updated_at: new Date(),
+          },
+        }
+      );
+    } catch (dbErr) {
+      console.warn(`[SiteScraper API] Notice updating manual run state for ${siteId}:`, dbErr);
+    }
 
     if (scraperUrl) {
       try {
@@ -109,11 +128,40 @@ scrapersRouter.post('/api/scrapers/:id/run', async (req, res) => {
   }
 });
 
-// 4b. POST /api/scrapers/:id/full-scan - Trigger full site rescan (postpones others)
+// 4b. POST /api/scrapers/:id/full-scan - Trigger full site rescan (postpones others by 12h)
 scrapersRouter.post('/api/scrapers/:id/full-scan', async (req, res) => {
   try {
     const siteId = req.params.id;
     const scraperUrl = getScraperAppUrl();
+    const postponeTime = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours from now
+
+    try {
+      await connectToDatabase();
+      await ScraperSiteModel.updateOne(
+        { site_id: siteId },
+        {
+          $set: {
+            status: 'full_scanning',
+            last_run_at: new Date(),
+            last_run_type: 'full_scan',
+            updated_at: new Date(),
+          },
+        }
+      );
+      // Postpone all other sites by 12 hours while full scan executes
+      await ScraperSiteModel.updateMany(
+        { site_id: { $ne: siteId } },
+        {
+          $set: {
+            status: 'postponed',
+            next_run_at: postponeTime,
+            updated_at: new Date(),
+          },
+        }
+      );
+    } catch (dbErr) {
+      console.warn(`[SiteScraper API] Notice updating full scan state for ${siteId}:`, dbErr);
+    }
 
     if (scraperUrl) {
       try {
@@ -141,6 +189,20 @@ scrapersRouter.post('/api/scrapers/:id/stop', async (req, res) => {
     const siteId = req.params.id;
     const scraperUrl = getScraperAppUrl();
 
+    try {
+      await connectToDatabase();
+      await ScraperSiteModel.updateOne(
+        { site_id: siteId },
+        {
+          $set: {
+            status: 'stopped',
+            enabled: false,
+            updated_at: new Date(),
+          },
+        }
+      );
+    } catch {}
+
     if (scraperUrl) {
       try {
         await axios.post(
@@ -166,6 +228,20 @@ scrapersRouter.post('/api/scrapers/:id/start', async (req, res) => {
   try {
     const siteId = req.params.id;
     const scraperUrl = getScraperAppUrl();
+
+    try {
+      await connectToDatabase();
+      await ScraperSiteModel.updateOne(
+        { site_id: siteId },
+        {
+          $set: {
+            status: 'idle',
+            enabled: true,
+            updated_at: new Date(),
+          },
+        }
+      );
+    } catch {}
 
     if (scraperUrl) {
       try {

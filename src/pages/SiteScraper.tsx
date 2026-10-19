@@ -8,14 +8,11 @@ import {
   ExternalLink, 
   AlertCircle, 
   CheckCircle2, 
-  Terminal, 
   Layers,
-  ArrowUpRight,
-  ShieldCheck,
   Pause,
   ArrowRight
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -26,19 +23,184 @@ interface ScraperSiteInfo {
   base_url: string;
   cron_schedule: string;
   enabled: boolean;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'stopped' | 'postponed' | 'full_scanning';
   total_scraped: number;
   failed_count: number;
   last_new_posts?: number;
   last_run_at: string | null;
+  last_run_type?: 'manual' | 'scheduled' | 'full_scan';
   next_run_at: string | null;
   last_error: string | null;
 }
 
+// 10 Fixed Target Sites: Always render instantly without any loading screen
+const DEFAULT_SITES: ScraperSiteInfo[] = [
+  {
+    id: 'lalamasa',
+    name: 'lalamasa.mobi',
+    domain: 'lalamasa.mobi',
+    base_url: 'https://lalamasa.mobi',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'masahub2',
+    name: 'masahub2.com',
+    domain: 'masahub2.com',
+    base_url: 'https://masahub2.com',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'mmsvibex',
+    name: 'mmsvibex.fit',
+    domain: 'mmsvibex.fit',
+    base_url: 'https://mmsvibex.fit',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'mydesi13',
+    name: 'mydesi13.com',
+    domain: 'mydesi13.com',
+    base_url: 'https://mydesi13.com',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'mydesiRest',
+    name: 'mydesi.rest',
+    domain: 'mydesi.rest',
+    base_url: 'https://mydesi.rest',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'mykamababa',
+    name: 'mykamababa.vip',
+    domain: 'mykamababa.vip',
+    base_url: 'https://mykamababa.vip',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'p4455',
+    name: '4455.com',
+    domain: '4455.com',
+    base_url: 'https://4455.com',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'viralchut',
+    name: 'viralchut.com',
+    domain: 'viralchut.com',
+    base_url: 'https://viralchut.com',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'viralmms',
+    name: 'viralmms.fun',
+    domain: 'viralmms.fun',
+    base_url: 'https://viralmms.fun',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+  {
+    id: 'xxxindianstories',
+    name: 'xxxindianstories.com',
+    domain: 'xxxindianstories.com',
+    base_url: 'https://www.xxxindianstories.com',
+    cron_schedule: 'Every 12 Hours',
+    enabled: true,
+    status: 'idle',
+    total_scraped: 0,
+    failed_count: 0,
+    last_new_posts: 0,
+    last_run_at: null,
+    last_run_type: 'scheduled',
+    next_run_at: null,
+    last_error: null,
+  },
+];
+
 export default function SiteScraper() {
   const navigate = useNavigate();
-  const [sites, setSites] = useState<ScraperSiteInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Fixed 10 cards pre-initialized: Zero loading screen flicker
+  const [sites, setSites] = useState<ScraperSiteInfo[]>(DEFAULT_SITES);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
   // External Scraper Engine status (e.g. deployed on Koyeb)
@@ -76,14 +238,17 @@ export default function SiteScraper() {
       const res = await fetch('/api/scrapers');
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.sites)) {
-          setSites(data.sites);
+        if (Array.isArray(data.sites) && data.sites.length > 0) {
+          setSites(prev => {
+            return prev.map(defaultSite => {
+              const found = data.sites.find((s: ScraperSiteInfo) => s.id === defaultSite.id || s.domain === defaultSite.domain);
+              return found ? { ...defaultSite, ...found } : defaultSite;
+            });
+          });
         }
       }
     } catch (err: any) {
       console.warn('Failed to fetch scraper sites:', err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -127,11 +292,24 @@ export default function SiteScraper() {
 
   const handleRunNow = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
+    // Optimistic UI update: Mark as manual run immediately, preserving next_run_at schedule!
+    setSites(prev => prev.map(s => {
+      if (s.id === siteId) {
+        return {
+          ...s,
+          status: 'running',
+          last_run_at: new Date().toISOString(),
+          last_run_type: 'manual',
+        };
+      }
+      return s;
+    }));
+
     try {
       const res = await fetch(`/api/scrapers/${siteId}/run`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(`Scraper started for "${siteName}". Check logs for progress.`);
+        toast.success(`Manual scan started for "${siteName}". Next scheduled scan time preserved.`);
         fetchSites();
       } else {
         toast.error(data.error || 'Failed to trigger scraper run');
@@ -145,11 +323,28 @@ export default function SiteScraper() {
 
   const handleFullScan = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
+    // Optimistic UI update: Set full scanning and postpone other sites
+    setSites(prev => prev.map(s => {
+      if (s.id === siteId) {
+        return {
+          ...s,
+          status: 'full_scanning',
+          last_run_at: new Date().toISOString(),
+          last_run_type: 'full_scan',
+        };
+      } else {
+        return {
+          ...s,
+          status: 'postponed',
+        };
+      }
+    }));
+
     try {
       const res = await fetch(`/api/scrapers/${siteId}/full-scan`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(`Full Scan queued for "${siteName}". All other site scans are postponed until complete.`);
+        toast.success(`Full Scan queued for "${siteName}". All other site scans are postponed by 12 hours until complete.`);
         fetchSites();
         fetchEngineStatus();
       } else {
@@ -164,6 +359,7 @@ export default function SiteScraper() {
 
   const handleStop = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
+    setSites(prev => prev.map(s => s.id === siteId ? { ...s, status: 'stopped', enabled: false } : s));
     try {
       const res = await fetch(`/api/scrapers/${siteId}/stop`, { method: 'POST' });
       const data = await res.json();
@@ -182,6 +378,7 @@ export default function SiteScraper() {
 
   const handleRestart = async (siteId: string, siteName: string) => {
     setActionInProgress(siteId);
+    setSites(prev => prev.map(s => s.id === siteId ? { ...s, status: 'idle', enabled: true } : s));
     try {
       const res = await fetch(`/api/scrapers/${siteId}/start`, { method: 'POST' });
       const data = await res.json();
@@ -226,7 +423,7 @@ export default function SiteScraper() {
           </p>
         </div>
 
-        {/* Replaced Header Buttons: Engine Health Indicator & Animated Master Stop/Resume */}
+        {/* Engine Health Indicator & Animated Master Stop/Resume */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Indicator 1: Engine Status (Running vs Stopped vs Offline) */}
           {engineStatus.online ? (
@@ -260,7 +457,7 @@ export default function SiteScraper() {
             </div>
           )}
 
-          {/* Indicator 2: Master Stop/Resume Button with animated Play/Pause transition */}
+          {/* Indicator 2: Master Stop/Resume Button */}
           {engineStatus.online && (
             engineStatus.is_running ? (
               <button
@@ -302,7 +499,7 @@ export default function SiteScraper() {
         </div>
       </div>
 
-      {/* Top Metrics Cards */}
+      {/* Top Metrics Cards: 10 fixed sites instantly ready */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
@@ -348,7 +545,7 @@ export default function SiteScraper() {
         </div>
       </div>
 
-      {/* Main Scrapers List */}
+      {/* Main Scrapers List: Pure 10 fixed cards instantly rendered without any loading message */}
       <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
         <div className="border-b border-zinc-100 dark:border-zinc-850 pb-2.5">
           <h2 className="text-sm font-bold text-black dark:text-white flex items-center gap-2">
@@ -360,172 +557,175 @@ export default function SiteScraper() {
           </p>
         </div>
 
-        {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400 animate-pulse">
-            Loading scraper modules...
-          </div>
-        ) : uniqueSites.length === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-400">
-            No scrapers configured.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-2">
-            {uniqueSites.map((site) => {
-              const isRunning = site.status === 'running';
-              const isStopped = !site.enabled || site.status === 'stopped';
-              const busy = actionInProgress === site.id;
+        <div className="grid grid-cols-1 gap-2">
+          {uniqueSites.map((site) => {
+            const isRunning = site.status === 'running';
+            const isFullScanning = site.status === 'full_scanning';
+            const isPostponed = site.status === 'postponed';
+            const isStopped = !site.enabled || site.status === 'stopped';
+            const busy = actionInProgress === site.id;
 
-              return (
-                <div
-                  key={site.id}
-                  className={`rounded-lg border px-3.5 py-2.5 transition-all ${
-                    isRunning
-                      ? 'border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-50/10 dark:bg-emerald-950/10'
-                      : isStopped
-                      ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-950/40 opacity-75'
-                      : 'border-zinc-200 dark:border-zinc-850 bg-white dark:bg-zinc-950/50 hover:border-zinc-300 dark:hover:border-zinc-800'
-                  }`}
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                    {/* Site Details */}
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-black dark:text-white flex items-center gap-1.5">
-                          <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <span>{site.name}</span>
-                        </span>
+            return (
+              <div
+                key={site.id}
+                className={`rounded-lg border px-3.5 py-2.5 transition-all ${
+                  isRunning || isFullScanning
+                    ? 'border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-50/10 dark:bg-emerald-950/10'
+                    : isPostponed
+                    ? 'border-amber-300 dark:border-amber-900/60 bg-amber-50/20 dark:bg-amber-950/20'
+                    : isStopped
+                    ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-950/40 opacity-75'
+                    : 'border-zinc-200 dark:border-zinc-850 bg-white dark:bg-zinc-950/50 hover:border-zinc-300 dark:hover:border-zinc-800'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  {/* Site Details */}
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-black dark:text-white flex items-center gap-1.5">
+                        <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>{site.name}</span>
+                      </span>
 
-                        <a
-                          href={site.base_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-zinc-400 hover:text-black dark:hover:text-white inline-flex items-center gap-0.5 font-mono"
-                          title="Open target website"
-                        >
-                          <span>{site.domain}</span>
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </a>
+                      <a
+                        href={site.base_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-zinc-400 hover:text-black dark:hover:text-white inline-flex items-center gap-0.5 font-mono"
+                        title="Open target website"
+                      >
+                        <span>{site.domain}</span>
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
 
-                        {/* Status Badge */}
-                        {isRunning ? (
-                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-flex items-center gap-1 animate-pulse">
-                            <RotateCw className="h-2.5 w-2.5 animate-spin" />
-                            <span>Running</span>
-                          </span>
-                        ) : isStopped ? (
-                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 inline-flex items-center gap-1">
-                            <Pause className="h-2.5 w-2.5" />
-                            <span>Stopped</span>
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {/* Schedule, Last Scan, Next Scan, and New in Last Scan */}
-                      <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3 text-zinc-400" />
-                          <span>Schedule: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{site.cron_schedule}</strong></span>
+                      {/* Status Badges */}
+                      {isRunning || isFullScanning ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 inline-flex items-center gap-1 animate-pulse">
+                          <RotateCw className="h-2.5 w-2.5 animate-spin" />
+                          <span>{isFullScanning ? 'Full Scanning' : 'Running'}</span>
                         </span>
-                        <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                        <span>
-                          Last Scan: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{site.last_run_at ? format(new Date(site.last_run_at), 'dd MMM yyyy, HH:mm') : 'Never'}</strong>
+                      ) : isPostponed ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 inline-flex items-center gap-1">
+                          <Clock className="h-2.5 w-2.5" />
+                          <span>Postponed</span>
                         </span>
-                        {site.next_run_at && (
-                          <>
-                            <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                            <span>
-                              Next Scan: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{format(new Date(site.next_run_at), 'dd MMM, HH:mm')}</strong>
-                            </span>
-                          </>
-                        )}
-                        <span className="text-zinc-300 dark:text-zinc-700">•</span>
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-semibold border border-emerald-200 dark:border-emerald-800/60">
-                          +{site.last_new_posts ?? 0} new
+                      ) : isStopped ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 inline-flex items-center gap-1">
+                          <Pause className="h-2.5 w-2.5" />
+                          <span>Stopped</span>
                         </span>
-                      </div>
+                      ) : null}
                     </div>
 
-                    {/* Right side: Button-sized Scraped Box & Action Buttons */}
-                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                      {/* Scraped count pill - clickable to view & filter in My Files */}
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/scraped?domain=${encodeURIComponent(site.domain)}#my-files-card`)}
-                        className="h-8 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 flex items-center gap-1.5 text-xs font-mono shrink-0 cursor-pointer transition-all active:scale-95 group"
-                        title={`Click to view all ${site.domain} videos in My Files`}
-                      >
-                        <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Scraped:</span>
-                        <span className="font-bold text-black dark:text-white group-hover:underline">
-                          {(site.total_scraped || 0).toLocaleString()}
-                        </span>
-                        <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-transform group-hover:translate-x-0.5" />
-                      </button>
-
-                      {/* Stop or Restart Button */}
-                      {isStopped ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleRestart(site.id, site.name)}
-                          className="h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                          title="Restart and enable scheduled scraping for this site"
-                        >
-                          <Play className="h-3 w-3 fill-current" />
-                          <span>Restart</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleStop(site.id, site.name)}
-                          className="h-8 px-2.5 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                          title="Stop and pause scraping for this site"
-                        >
-                          <Square className="h-2.5 w-2.5 fill-current" />
-                          <span>Stop</span>
-                        </button>
+                    {/* Schedule, Last Scan (with Manual Run support), Next Scan, and New in Last Scan */}
+                    <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-zinc-400" />
+                        <span>Schedule: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{site.cron_schedule}</strong></span>
+                      </span>
+                      <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                      <span>
+                        Last Scan:{' '}
+                        <strong className="font-medium text-zinc-700 dark:text-zinc-300">
+                          {site.last_run_type === 'manual'
+                            ? (site.last_run_at ? `Manual Run (${format(new Date(site.last_run_at), 'dd MMM, HH:mm')})` : 'Manual Run')
+                            : (site.last_run_at ? format(new Date(site.last_run_at), 'dd MMM yyyy, HH:mm') : 'Never')}
+                        </strong>
+                      </span>
+                      {site.next_run_at && (
+                        <>
+                          <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                          <span>
+                            Next Scan: <strong className="font-medium text-zinc-700 dark:text-zinc-300">{format(new Date(site.next_run_at), 'dd MMM, HH:mm')}</strong>
+                          </span>
+                        </>
                       )}
-
-                      {/* Run Now Trigger (Incremental) */}
-                      <button
-                        type="button"
-                        disabled={busy || isRunning}
-                        onClick={() => handleRunNow(site.id, site.name)}
-                        className="h-8 px-3 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center gap-1.5 transition-opacity cursor-pointer disabled:opacity-50"
-                        title="Execute incremental latest scan now"
-                      >
-                        <RotateCw className={`h-3 w-3 ${isRunning || busy ? 'animate-spin' : ''}`} />
-                        <span>{isRunning ? 'Scanning...' : 'Run Now'}</span>
-                      </button>
-
-                      {/* Full Scan Trigger */}
-                      <button
-                        type="button"
-                        disabled={busy || isRunning}
-                        onClick={() => handleFullScan(site.id, site.name)}
-                        className="h-8 px-2.5 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Run Full Scan: Rescans entire site across all pages (postpones other scheduled scans until complete)"
-                      >
-                        <RotateCw className={`h-3 w-3 ${busy ? 'animate-spin' : ''}`} />
-                        <span>Full Scan</span>
-                      </button>
+                      <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-semibold border border-emerald-200 dark:border-emerald-800/60">
+                        +{site.last_new_posts ?? 0} new
+                      </span>
                     </div>
                   </div>
 
-                  {/* Last error notice if present */}
-                  {site.last_error && (
-                    <div className="mt-2 p-2 rounded-lg border border-red-200 dark:border-red-950 bg-red-50/50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">Error during last run: {site.last_error}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  {/* Right side: Scraped Count & Responsive Action Buttons */}
+                  <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                    {/* Scraped count pill */}
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/scraped?domain=${encodeURIComponent(site.domain)}#my-files-card`)}
+                      className="h-8 px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 flex items-center gap-1.5 text-xs font-mono shrink-0 cursor-pointer transition-all active:scale-95 group"
+                      title={`Click to view all ${site.domain} videos in My Files`}
+                    >
+                      <span className="text-zinc-400 text-[11px] group-hover:text-zinc-600 dark:group-hover:text-zinc-300">Scraped:</span>
+                      <span className="font-bold text-black dark:text-white group-hover:underline">
+                        {(site.total_scraped || 0).toLocaleString()}
+                      </span>
+                      <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-transform group-hover:translate-x-0.5" />
+                    </button>
 
+                    {/* Responsive Button 1: Stop or Restart (Mobile: icon only, Desktop: icon + text) */}
+                    {isStopped ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleRestart(site.id, site.name)}
+                        className="h-8 px-2 sm:px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Restart and enable scheduled scraping for this site"
+                      >
+                        <Play className="h-3 w-3 fill-current shrink-0" />
+                        <span className="hidden sm:inline">Restart</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleStop(site.id, site.name)}
+                        className="h-8 px-2 sm:px-2.5 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Stop and pause scraping for this site"
+                      >
+                        <Square className="h-2.5 w-2.5 fill-current shrink-0" />
+                        <span className="hidden sm:inline">Stop</span>
+                      </button>
+                    )}
+
+                    {/* Responsive Button 2: Run Now (Mobile: icon only, Desktop: icon + text) */}
+                    <button
+                      type="button"
+                      disabled={busy || isRunning || isFullScanning}
+                      onClick={() => handleRunNow(site.id, site.name)}
+                      className="h-8 px-2 sm:px-3 rounded-lg bg-black dark:bg-white text-white dark:text-black hover:opacity-90 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-opacity cursor-pointer disabled:opacity-50"
+                      title="Execute incremental latest scan now (preserves next scheduled run)"
+                    >
+                      <RotateCw className={`h-3 w-3 shrink-0 ${isRunning || busy ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">{isRunning ? 'Scanning...' : 'Run Now'}</span>
+                    </button>
+
+                    {/* Responsive Button 3: Full Scan (Mobile: icon only, Desktop: icon + text) */}
+                    <button
+                      type="button"
+                      disabled={busy || isRunning || isFullScanning}
+                      onClick={() => handleFullScan(site.id, site.name)}
+                      className="h-8 px-2 sm:px-2.5 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Run Full Scan: Rescans entire site across all pages (postpones other scheduled scans by 12 hours until complete)"
+                    >
+                      <RotateCw className={`h-3 w-3 shrink-0 ${busy && isFullScanning ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">Full Scan</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Last error notice if present */}
+                {site.last_error && (
+                  <div className="mt-2 p-2 rounded-lg border border-red-200 dark:border-red-950 bg-red-50/50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">Error during last run: {site.last_error}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

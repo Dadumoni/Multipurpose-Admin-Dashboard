@@ -321,6 +321,7 @@ export async function getAllScrapersInfo(): Promise<ScraperSiteInfo[]> {
       failed_count: doc.failed_count || 0,
       last_new_posts: doc.last_new_posts || 0,
       last_run_at: doc.last_run_at ? new Date(doc.last_run_at).toISOString() : null,
+      last_run_type: (doc.last_run_type as any) || 'scheduled',
       next_run_at: doc.next_run_at ? new Date(doc.next_run_at).toISOString() : null,
       last_error: doc.last_error || null,
     });

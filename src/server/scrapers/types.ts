@@ -25,6 +25,7 @@ export interface ScraperSiteInfo {
   failed_count: number;
   last_new_posts?: number;
   last_run_at: string | null;
+  last_run_type?: 'manual' | 'scheduled' | 'full_scan';
   next_run_at: string | null;
   last_error: string | null;
 }
