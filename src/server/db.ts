@@ -45,7 +45,7 @@ export interface ISupabaseDashboardStats {
 
 /**
  * Instant O(1) read from Supabase 'dashboard_stats' table.
- * Maintained automatically via PostgreSQL triggers on viralhub_db and all_videos_db.
+ * Maintained automatically via PostgreSQL triggers on viralhub_db and visitor_views.
  * Never requires full table scans.
  */
 export async function getSupabaseDashboardStats(): Promise<ISupabaseDashboardStats | null> {
