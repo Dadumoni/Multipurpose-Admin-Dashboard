@@ -120,6 +120,7 @@ export default function Overview() {
     totalViews: number;
     totalScraped: number;
     totalUploaded: number;
+    mongoTotalVideos?: number;
     supabaseTotal?: number;
     videoTrend?: TrendInfo;
     viewsTrend?: TrendInfo;
@@ -131,6 +132,7 @@ export default function Overview() {
     totalViews: 0,
     totalScraped: 0,
     totalUploaded: 0,
+    mongoTotalVideos: 0,
     supabaseTotal: 0,
     videoSources: [],
   });
@@ -351,7 +353,7 @@ export default function Overview() {
       {/* 4 STAT CARDS */}
       {/* 4 STAT CARDS - Synchronized with All Videos */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Videos (Matching All Videos Total Posts) */}
+        {/* Card 1: Total Videos [MongoDB] */}
         <Link 
           to="/scraped"
           className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
@@ -359,7 +361,7 @@ export default function Overview() {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              Total Videos
+              Total Videos [MongoDB]
             </span>
             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
               <Video className="h-4 w-4" />
@@ -367,7 +369,7 @@ export default function Overview() {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {(stats.supabaseTotal || stats.totalVideos || stats.totalScraped).toLocaleString()}
+              {(stats.mongoTotalVideos || stats.totalVideos || stats.totalScraped).toLocaleString()}
             </div>
             
             {/* Dynamic Trend Indicator for TOTAL VIDEOS */}
@@ -386,7 +388,7 @@ export default function Overview() {
             {(!stats.videoTrend || stats.videoTrend?.direction === 'neutral') && (
               <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                 <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span>{stats.videoTrend?.label || 'In public collection'}</span>
+                <span>{stats.videoTrend?.label || 'In MongoDB collection'}</span>
               </div>
             )}
           </div>
