@@ -72,22 +72,24 @@ export async function recalculateStats(): Promise<IDashboardStats | null> {
       }
     } catch {}
 
-    // Build site-by-site scraped counts and calculate totals
-    const sitesScraped: Record<string, number> = {};
+    // Build site-by-site scraped counts using clean site keys (no dots)
+    const domainCounts: Record<string, number> = {};
     for (const item of domainAgg) {
       if (item._id && item._id !== 'Unknown') {
-        sitesScraped[String(item._id)] = Number(item.count) || 0;
+        domainCounts[String(item._id)] = Number(item.count) || 0;
       }
     }
 
+    const sitesScraped: Record<string, number> = {};
     let totalScrapedSum = 0;
     let totalFailedSum = 0;
     try {
       const { ScraperSiteModel } = await import('../lib/mongodb.js');
       const allSites = await ScraperSiteModel.find({}).lean();
       for (const s of allSites) {
-        const count = sitesScraped[s.domain] || s.total_scraped || 0;
-        sitesScraped[s.site_id] = count;
+        const count = domainCounts[s.domain] || s.total_scraped || 0;
+        const cleanKey = s.site_id.replace(/\./g, '_');
+        sitesScraped[cleanKey] = count;
         totalScrapedSum += count;
         totalFailedSum += (s.failed_count || 0);
 
