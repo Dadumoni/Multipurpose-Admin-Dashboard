@@ -1,50 +1,17 @@
-import { getClientCache, setClientCache, invalidateClientCache } from '@/src/lib/clientCache';
 import { useEffect, useState } from 'react';
-import { 
-  Users, 
-  Video, 
-  Film, 
-  Upload, 
-  Calendar, 
-  AlertTriangle,
-  RotateCw,
-  TrendingUp,
-  TrendingDown,
-  ArrowLeftRight,
-  ChevronLeft,
-  ChevronRight,
-  Smartphone,
-  Globe,
-  Compass,
-  Shield,
-  Flame,
-  Send,
-  Database
-} from 'lucide-react';
-import { 
-  LineChart,
-  Line,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
-import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
+import { AlertTriangle, RotateCw } from 'lucide-react';
 import { useTheme } from '@/src/components/ThemeProvider';
-import { cn } from '@/src/lib/utils';
+import { getClientCache, setClientCache, invalidateClientCache } from '@/src/lib/clientCache';
 import { toast } from 'sonner';
-import TopBrowsersBarChart from '@/src/components/TopBrowsersBarChart';
 
-// Device breakdown palette matching user reference image: #bbf7f9, #e6739f, #fef08a, #d9c814, #be185d
-const DEVICE_COLORS = ['#bbf7f9', '#e6739f', '#fef08a', '#d9c814', '#be185d', '#8b5cf6'];
-
-// Top countries pill progress bar colors matching user reference image
-const COUNTRY_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#64748b'];
+// Modular Overview Subcomponents
+import OverviewHeader from '@/src/components/overview/OverviewHeader';
+import OverviewStatsCards, { OverviewStatsData, TrendInfo } from '@/src/components/overview/OverviewStatsCards';
+import TrafficLineChart, { DailyTrafficPoint } from '@/src/components/overview/TrafficLineChart';
+import DeviceBreakdownCard from '@/src/components/overview/DeviceBreakdownCard';
+import TopCountriesCard from '@/src/components/overview/TopCountriesCard';
+import TopBrowsersCard from '@/src/components/overview/TopBrowsersCard';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,13 +23,6 @@ const MONTH_NAMES_SHORT = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
 ];
 
-interface TrendInfo {
-  change: number;
-  percent?: number;
-  direction: 'increase' | 'decrease' | 'neutral';
-  label: string;
-}
-
 interface VisitorsData {
   available: boolean;
   message: string;
@@ -73,7 +33,7 @@ interface VisitorsData {
   browsers: { name: string; count: number; percentage: number }[];
 }
 
-function getInitialMonthlyTraffic(year: number, month: number) {
+function getInitialMonthlyTraffic(year: number, month: number): DailyTrafficPoint[] {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthShort = MONTH_NAMES_SHORT[month];
 
@@ -103,32 +63,19 @@ export default function Overview() {
 
   const [loading, setLoading] = useState(true);
   const [postsSchemaNotice, setPostsSchemaNotice] = useState(false);
-  
-  // Data state
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [stats, setStats] = useState<{
-    totalVideos: number;
-    totalViews: number;
-    totalScraped: number;
-    totalUploaded: number;
-    mongoTotalVideos?: number;
-    supabaseTotal?: number;
-    videoTrend?: TrendInfo;
-    viewsTrend?: TrendInfo;
-    videoSources?: { domain: string; count: number; percentage: number; totalViews: number }[];
-    lastScrapedAt?: string | null;
-    statsUpdatedAt?: string | null;
-  }>({
+
+  // Data state
+  const [stats, setStats] = useState<OverviewStatsData>({
     totalVideos: 0,
     totalViews: 0,
     totalScraped: 0,
     totalUploaded: 0,
     mongoTotalVideos: 0,
     supabaseTotal: 0,
-    videoSources: [],
   });
 
-  const [monthlyTraffic, setMonthlyTraffic] = useState<any[]>(() => getInitialMonthlyTraffic(curYear, curMonth));
+  const [monthlyTraffic, setMonthlyTraffic] = useState<DailyTrafficPoint[]>(() => getInitialMonthlyTraffic(curYear, curMonth));
   const [visitors, setVisitors] = useState<VisitorsData>({
     available: false,
     message: '',
@@ -141,7 +88,6 @@ export default function Overview() {
 
   // Available selectable years (from 2023 up to current year)
   const availableYears = Array.from({ length: curYear - 2023 + 1 }, (_, i) => 2023 + i);
-
   const isCurrentMonthAndYear = selectedYear === curYear && selectedMonth === curMonth;
 
   useEffect(() => {
@@ -225,7 +171,6 @@ export default function Overview() {
         if (data.visitors) {
           setVisitors(data.visitors);
         }
-        // Cache in browser sessionStorage/localStorage for 90 seconds (1.5 minutes)
         setClientCache(cacheKey, data);
       }
     } catch (err: any) {
@@ -265,7 +210,6 @@ export default function Overview() {
 
   const handleYearChange = (year: number) => {
     setSelectedYear(year);
-    // If selecting current year and selected month is in future, clamp to curMonth
     if (year === curYear && selectedMonth > curMonth) {
       setSelectedMonth(curMonth);
     }
@@ -276,7 +220,7 @@ export default function Overview() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Schema Notice if needed */}
+      {/* Schema Notice */}
       {postsSchemaNotice && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
           <div className="flex items-center gap-2.5">
@@ -304,527 +248,61 @@ export default function Overview() {
         </div>
       )}
 
-      {/* Main Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-black dark:text-white">Overview</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Manage your video content and performance.</p>
-        </div>
+      {/* Reusable Main Header */}
+      <OverviewHeader 
+        totalUsers={visitors.totalUsers} 
+        totalOnline={visitors.totalOnline} 
+      />
 
-        {/* Badges opposite of Overview: Month + Total Users {total ips} + Total Online */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Box 1: Dynamic Month Header Badge (October) */}
-          <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-            <Calendar className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
-            <span>{format(new Date(), 'MMMM yyyy')}</span>
-          </div>
+      {/* Reusable 4 Stat Cards */}
+      <OverviewStatsCards stats={stats} />
 
-          {/* Box 2: Total Users {Total IPs} */}
-          <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-            <Users className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
-            <span>
-              Total Users: <strong className="font-semibold text-black dark:text-white font-mono">{visitors.totalUsers ?? 0}</strong>{' '}
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">({visitors.totalUsers ?? 0} IPs)</span>
-            </span>
-          </div>
+      {/* Reusable Daily Traffic Line Graph */}
+      <TrafficLineChart
+        monthlyTraffic={monthlyTraffic}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+        selectedYear={selectedYear}
+        handleYearChange={handleYearChange}
+        handlePrevMonth={handlePrevMonth}
+        handleNextMonth={handleNextMonth}
+        isCurrentMonthAndYear={isCurrentMonthAndYear}
+        selectedMonthLabel={selectedMonthLabel}
+        totalMonthViews={totalMonthViews}
+        monthNames={MONTH_NAMES}
+        availableYears={availableYears}
+        curYear={curYear}
+        curMonth={curMonth}
+        isDark={isDark}
+      />
 
-          {/* Box 3: Total Online (Realtime Active Visitors) */}
-          <div className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 shadow-sm">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>
-              Online: <strong className="font-semibold text-emerald-600 dark:text-emerald-400 font-mono">{visitors.totalOnline ?? 0}</strong>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 4 STAT CARDS */}
-      {/* 4 STAT CARDS - Synchronized with All Videos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Videos [MongoDB] */}
-        <Link 
-          to="/scraped"
-          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
-          title="Click to view All Videos"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              Total Videos [MongoDB]
-            </span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
-              <Video className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {(stats.mongoTotalVideos || stats.totalVideos || stats.totalScraped).toLocaleString()}
-            </div>
-            
-            {/* Dynamic Trend Indicator for TOTAL VIDEOS */}
-            {stats.videoTrend?.direction === 'increase' && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-                <span>{stats.videoTrend.label}</span>
-              </div>
-            )}
-            {stats.videoTrend?.direction === 'decrease' && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-rose-600 dark:text-rose-400 font-medium">
-                <TrendingDown className="h-3.5 w-3.5 shrink-0" />
-                <span>{stats.videoTrend.label}</span>
-              </div>
-            )}
-            {(!stats.videoTrend || stats.videoTrend?.direction === 'neutral') && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span>{stats.videoTrend?.label || 'In MongoDB collection'}</span>
-              </div>
-            )}
-          </div>
-        </Link>
-
-        {/* Card 2: Total Views */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Total Views</span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400">
-              <Users className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono">
-              {stats.totalViews.toLocaleString()}
-            </div>
-
-            {/* Dynamic Trend Indicator for TOTAL VIEWS */}
-            {stats.viewsTrend?.direction === 'increase' && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-                <span>{stats.viewsTrend.label}</span>
-              </div>
-            )}
-            {stats.viewsTrend?.direction === 'decrease' && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-rose-600 dark:text-rose-400 font-medium">
-                <TrendingDown className="h-3.5 w-3.5 shrink-0" />
-                <span>{stats.viewsTrend.label}</span>
-              </div>
-            )}
-            {(!stats.viewsTrend || stats.viewsTrend?.direction === 'neutral') && (
-              <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span>{stats.viewsTrend?.label || '0% from last month'}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 3: Supabase Videos (Replacing Video Sources in Overview) */}
-        <Link
-          to="/scraped"
-          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
-          title="Click to view all Supabase Videos"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">
-              Supabase Videos
-            </span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
-              <Database className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {(stats.supabaseTotal || stats.totalScraped || 34369).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              In public.viralhub_db
-            </div>
-          </div>
-        </Link>
-
-        {/* Card 4: Telegram Upload */}
-        <Link
-          to="/uploaded"
-          className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl p-5 shadow-sm flex flex-col justify-between transition-all group"
-          title="Click to view Telegram Uploads"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-medium text-zinc-500 dark:text-zinc-400 tracking-wide">Telegram Upload</span>
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-md p-1.5 text-zinc-600 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors">
-              <Upload className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-semibold tracking-tight text-black dark:text-white font-mono group-hover:underline">
-              {stats.totalUploaded.toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Telegram bot uploads</div>
-          </div>
-        </Link>
-      </div>
-
-      {/* DAILY TRAFFIC LINE GRAPH WITH MONTH/YEAR PICKER CONTROLS */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-100 dark:border-zinc-800">
-          <div className="flex items-center gap-3">
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-lg p-2 text-zinc-800 dark:text-zinc-200">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-black dark:text-white">Daily Traffic</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Daily view traffic for {selectedMonthLabel} ({totalMonthViews.toLocaleString()} total views).
-              </p>
-            </div>
-          </div>
-
-          {/* Month/Year Picker Controls (Replacing old 'Month Total' text) */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-0.5 shadow-sm">
-              {/* Prev Month Button */}
-              <button
-                type="button"
-                onClick={handlePrevMonth}
-                disabled={selectedYear === 2023 && selectedMonth === 0}
-                className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                title="Previous Month"
-                aria-label="Previous Month"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-
-              {/* Month Selector */}
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="bg-transparent text-xs font-semibold text-black dark:text-white px-2 py-1 focus:outline-none cursor-pointer"
-                aria-label="Select Month"
-              >
-                {MONTH_NAMES.map((name, index) => {
-                  const isFutureMonth = selectedYear === curYear && index > curMonth;
-                  return (
-                    <option 
-                      key={name} 
-                      value={index} 
-                      disabled={isFutureMonth}
-                      className="bg-white dark:bg-zinc-900 text-black dark:text-white"
-                    >
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-
-              {/* Year Selector */}
-              <select
-                value={selectedYear}
-                onChange={(e) => handleYearChange(Number(e.target.value))}
-                className="bg-transparent text-xs font-semibold text-black dark:text-white px-2 py-1 border-l border-zinc-200 dark:border-zinc-800 focus:outline-none cursor-pointer"
-                aria-label="Select Year"
-              >
-                {availableYears.map((yr) => (
-                  <option 
-                    key={yr} 
-                    value={yr}
-                    className="bg-white dark:bg-zinc-900 text-black dark:text-white"
-                  >
-                    {yr}
-                  </option>
-                ))}
-              </select>
-
-              {/* Next Month Button */}
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                disabled={isCurrentMonthAndYear}
-                className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                title="Next Month"
-                aria-label="Next Month"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="h-[320px] w-full pt-4">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart 
-              data={monthlyTraffic} 
-              margin={{ top: 12, right: 12, left: -20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? '#27272a' : '#f4f4f5'} />
-              <XAxis 
-                dataKey="date" 
-                stroke={isDark ? '#a1a1aa' : '#71717a'} 
-                fontSize={11} 
-                tickLine={false} 
-                interval="preserveStartEnd"
-              />
-              <YAxis 
-                stroke={isDark ? '#a1a1aa' : '#71717a'} 
-                fontSize={11} 
-                tickLine={false} 
-                axisLine={false}
-                allowDecimals={false}
-              />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: isDark ? '#000000' : '#ffffff', 
-                  borderColor: isDark ? '#27272a' : '#e4e4e7', 
-                  color: isDark ? '#ffffff' : '#000000',
-                  borderRadius: '8px', 
-                  fontSize: '12px',
-                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                }}
-                itemStyle={{ color: isDark ? '#ffffff' : '#000000' }}
-                labelStyle={{ color: isDark ? '#a1a1aa' : '#71717a' }}
-                formatter={(value: any) => [`${Number(value).toLocaleString()} views`, 'Traffic']}
-                labelFormatter={(label) => `Date: ${label}`}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="views" 
-                name="Traffic"
-                stroke={isDark ? '#ffffff' : '#000000'} 
-                strokeWidth={2}
-                dot={{ r: 3, fill: isDark ? '#ffffff' : '#000000', strokeWidth: 1 }}
-                activeDot={{ r: 6, fill: isDark ? '#ffffff' : '#000000' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* VISITORS ANALYTICS CARDS (Device Breakdown & Top Countries by Views) */}
+      {/* VISITORS ANALYTICS CARDS (Device Breakdown & Top Countries) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Card 1: Device Breakdown (Circular Chart matching reference image) */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Smartphone className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-                <h3 className="text-sm font-semibold text-black dark:text-white">Device Breakdown</h3>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Distribution across platforms for {selectedMonthLabel}.
-              </p>
-            </div>
-            {visitors.available && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium">
-                Live
-              </span>
-            )}
-          </div>
+        {/* Reusable Device Breakdown Card */}
+        <DeviceBreakdownCard
+          available={visitors.available}
+          message={visitors.message}
+          devices={visitors.devices}
+          selectedMonthLabel={selectedMonthLabel}
+          isDark={isDark}
+        />
 
-          {!visitors.available ? (
-            /* Database Fallback Warning inside card */
-            <div className="h-[230px] flex flex-col items-center justify-center p-6 text-center rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
-              <div className="p-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mb-2.5">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Visitor Telemetry Unavailable
-              </span>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[280px]">
-                {visitors.message || 'No visitor records recorded yet in visitor_views.'}
-              </p>
-            </div>
-          ) : visitors.devices.length === 0 ? (
-            <div className="h-[230px] flex items-center justify-center text-xs text-zinc-500">
-              No device records recorded for {selectedMonthLabel}.
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-2">
-              <div className="h-[200px] w-[200px] shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={visitors.devices}
-                      dataKey="count"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={90}
-                      innerRadius={0}
-                      label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
-                        if (percent < 0.05) return null;
-                        const RADIAN = Math.PI / 180;
-                        const radius = innerRadius + (outerRadius - innerRadius) * 0.58;
-                        const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                        const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            fill="#292524"
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            className="text-xs font-bold"
-                          >
-                            {`${Math.round(percent * 100)}%`}
-                          </text>
-                        );
-                      }}
-                      labelLine={false}
-                      stroke={isDark ? '#09090b' : '#ffffff'}
-                      strokeWidth={2}
-                    >
-                      {visitors.devices.map((_entry, index) => (
-                        <Cell key={`cell-${index}`} fill={DEVICE_COLORS[index % DEVICE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: isDark ? '#000000' : '#ffffff',
-                        borderColor: isDark ? '#27272a' : '#e4e4e7',
-                        color: isDark ? '#ffffff' : '#000000',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                      }}
-                      formatter={(val: any, name: any) => [`${val} visitors`, name]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Legend with matching colors */}
-              <div className="flex-1 w-full space-y-2.5">
-                {visitors.devices.map((device, index) => (
-                  <div key={device.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-3 w-3 rounded-full shrink-0 shadow-sm"
-                        style={{ backgroundColor: DEVICE_COLORS[index % DEVICE_COLORS.length] }}
-                      />
-                      <span className="font-medium text-zinc-700 dark:text-zinc-300">{device.name}</span>
-                    </div>
-                    <span className="font-mono text-zinc-500 dark:text-zinc-400">
-                      {device.count.toLocaleString()} ({device.percentage}%)
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Card 2: Top Countries by Views (Progress Bar Card Layout matching reference image) */}
-        <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-                <h3 className="text-sm font-semibold text-black dark:text-white">Top Countries by Views</h3>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                View distribution by geographic region for {selectedMonthLabel}.
-              </p>
-            </div>
-            {visitors.available && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium">
-                Live
-              </span>
-            )}
-          </div>
-
-          {!visitors.available ? (
-            /* Database Fallback Warning inside card */
-            <div className="h-[230px] flex flex-col items-center justify-center p-6 text-center rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
-              <div className="p-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mb-2.5">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Visitor Telemetry Unavailable
-              </span>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[280px]">
-                {visitors.message || 'No geographic visitor view records recorded yet in visitor_views.'}
-              </p>
-            </div>
-          ) : visitors.countries.length === 0 ? (
-            <div className="h-[230px] flex items-center justify-center text-xs text-zinc-500">
-              No country view records found for {selectedMonthLabel}.
-            </div>
-          ) : (
-            <div className="h-[230px] flex flex-col justify-center space-y-3.5">
-              {visitors.countries.slice(0, 6).map((country, index) => (
-                <div key={country.name} className="flex items-center justify-between gap-3 text-xs">
-                  <span className="w-28 sm:w-36 truncate font-medium text-zinc-800 dark:text-zinc-200 shrink-0">
-                    {country.name}
-                  </span>
-
-                  {/* Rounded pill progress bar matching reference image 3 */}
-                  <div className="flex-1 h-3 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ 
-                        width: `${Math.min(100, Math.max(6, country.percentage))}%`,
-                        backgroundColor: COUNTRY_COLORS[index % COUNTRY_COLORS.length]
-                      }}
-                    />
-                  </div>
-
-                  <div className="font-mono text-zinc-600 dark:text-zinc-300 text-right w-24 shrink-0">
-                    <span className="font-semibold text-black dark:text-white">{country.count.toLocaleString()}</span>{' '}
-                    <span className="text-zinc-500 dark:text-zinc-400">({country.percentage}%)</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Reusable Top Countries Card */}
+        <TopCountriesCard
+          available={visitors.available}
+          message={visitors.message}
+          countries={visitors.countries}
+          selectedMonthLabel={selectedMonthLabel}
+        />
       </div>
 
-      {/* Card 3: Top Browsers (Progress Bar Card Layout with icons matching reference image) */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Compass className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-              <h3 className="text-sm font-semibold text-black dark:text-white">Top Browsers</h3>
-            </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Traffic by browser &amp; in-app webviews
-            </p>
-          </div>
-          {visitors.available && (
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300">
-              [ Web: {(() => {
-                const inApp = visitors.browsers.find(b => b.name.toLowerCase().includes('in-app') || b.name.toLowerCase().includes('telegram'))?.count || 0;
-                const total = visitors.browsers.reduce((acc, b) => acc + b.count, 0);
-                return total > 0 ? (((total - inApp) / total) * 100).toFixed(1) : '100.0';
-              })()}% ]
-            </span>
-          )}
-        </div>
-
-        {!visitors.available ? (
-          /* Database Fallback Warning inside card */
-          <div className="h-[180px] flex flex-col items-center justify-center p-6 text-center rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
-            <div className="p-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mb-2.5">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-              Visitor Telemetry Unavailable
-            </span>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 max-w-[320px]">
-              {visitors.message || 'No browser telemetry recorded yet in visitor_views.'}
-            </p>
-          </div>
-        ) : visitors.browsers.length === 0 ? (
-          <div className="h-[180px] flex items-center justify-center text-xs text-zinc-500">
-            No browser telemetry recorded for {selectedMonthLabel}.
-          </div>
-        ) : (
-          <div className="pt-2">
-            <TopBrowsersBarChart browsers={visitors.browsers} selectedMonthLabel={selectedMonthLabel} />
-          </div>
-        )}
-      </div>
+      {/* Reusable Top Browsers Card with Vertical Bar Chart */}
+      <TopBrowsersCard
+        available={visitors.available}
+        message={visitors.message}
+        browsers={visitors.browsers}
+        selectedMonthLabel={selectedMonthLabel}
+      />
     </div>
   );
 }

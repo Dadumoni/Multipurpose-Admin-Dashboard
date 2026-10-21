@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import Layout from './components/dashboard/Layout';
+import Layout from './components/layout/Layout';
 import Overview from './pages/Overview';
 import ScrapedVideos from './pages/ScrapedVideos';
 import UploadedVideos from './pages/UploadedVideos';
