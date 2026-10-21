@@ -291,13 +291,15 @@ statsRouter.get('/api/overview', async (req, res) => {
     const normalizeBrowser = (val: string) => {
       if (!val) return 'Chrome';
       const b = val.toLowerCase();
-      if (b.includes('telegram')) return 'Telegram In-App';
-      if (b.includes('brave') || b.includes('ucbrowser')) return 'Brave / UC Browser';
-      if (b.includes('firefox') || b.includes('fxios')) return 'Firefox / Edge';
-      if (b.includes('edge') || b.includes('edg')) return 'Firefox / Edge';
+      if (b.includes('telegram')) return 'Telegram';
+      if (b.includes('edge') || b.includes('edg')) return 'Edge';
+      if (b.includes('firefox') || b.includes('fxios')) return 'Firefox';
+      if (b.includes('brave')) return 'Brave';
+      if (b.includes('ucbrowser') || b.includes('uc browser')) return 'UC Browser';
+      if (b.includes('opera') || b.includes('opr')) return 'Opera';
+      if (b.includes('samsung') || b.includes('samsungbrowser')) return 'Samsung Internet';
       if (b.includes('safari') && !b.includes('chrome')) return 'Safari';
       if (b.includes('chrome') || b.includes('crios')) return 'Chrome';
-      if (b.includes('opera') || b.includes('opr')) return 'Opera';
       return val.trim() || 'Chrome';
     };
 

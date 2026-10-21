@@ -38,22 +38,13 @@ import { Link } from 'react-router-dom';
 import { useTheme } from '@/src/components/ThemeProvider';
 import { cn } from '@/src/lib/utils';
 import { toast } from 'sonner';
+import TopBrowsersBarChart from '@/src/components/TopBrowsersBarChart';
 
 // Device breakdown palette matching user reference image: #bbf7f9, #e6739f, #fef08a, #d9c814, #be185d
 const DEVICE_COLORS = ['#bbf7f9', '#e6739f', '#fef08a', '#d9c814', '#be185d', '#8b5cf6'];
 
 // Top countries pill progress bar colors matching user reference image
 const COUNTRY_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#64748b'];
-
-function getBrowserIcon(name: string) {
-  const lower = name.toLowerCase();
-  if (lower.includes('chrome')) return <Globe className="h-4 w-4 text-sky-500 shrink-0" />;
-  if (lower.includes('telegram') || lower.includes('in-app')) return <Send className="h-4 w-4 text-blue-400 shrink-0" />;
-  if (lower.includes('safari')) return <Compass className="h-4 w-4 text-amber-500 shrink-0" />;
-  if (lower.includes('brave') || lower.includes('uc')) return <Shield className="h-4 w-4 text-orange-500 shrink-0" />;
-  if (lower.includes('firefox') || lower.includes('edge')) return <Flame className="h-4 w-4 text-rose-500 shrink-0" />;
-  return <Globe className="h-4 w-4 text-zinc-400 shrink-0" />;
-}
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -829,28 +820,8 @@ export default function Overview() {
             No browser telemetry recorded for {selectedMonthLabel}.
           </div>
         ) : (
-          <div className="space-y-3 pt-2">
-            {visitors.browsers.slice(0, 5).map((browser) => (
-              <div key={browser.name} className="flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2.5 w-40 sm:w-48 shrink-0">
-                  {getBrowserIcon(browser.name)}
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200 truncate">{browser.name}</span>
-                </div>
-
-                {/* Horizontal progress bar matching image 4 */}
-                <div className="flex-1 h-3.5 bg-zinc-100 dark:bg-zinc-800/80 rounded overflow-hidden">
-                  <div 
-                    className="h-full bg-zinc-800 dark:bg-zinc-200 rounded transition-all duration-500"
-                    style={{ width: `${Math.min(100, Math.max(5, browser.percentage))}%` }}
-                  />
-                </div>
-
-                <div className="font-mono text-zinc-600 dark:text-zinc-300 text-right w-28 shrink-0">
-                  <span className="font-semibold text-black dark:text-white">{browser.count.toLocaleString()}</span>{' '}
-                  <span className="text-zinc-500 dark:text-zinc-400">({browser.percentage}%)</span>
-                </div>
-              </div>
-            ))}
+          <div className="pt-2">
+            <TopBrowsersBarChart browsers={visitors.browsers} selectedMonthLabel={selectedMonthLabel} />
           </div>
         )}
       </div>
