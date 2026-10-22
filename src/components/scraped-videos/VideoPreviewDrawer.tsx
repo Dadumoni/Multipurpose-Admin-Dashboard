@@ -142,9 +142,8 @@ export function VideoPreviewDrawer({
                 else if (!usedSizes.has(1080)) addSource(previewVideo.video_url, 1080);
               }
 
-              if (plyrSources.length < 2 && fallbackUrl) {
-                if (!usedSizes.has(720)) addSource(fallbackUrl, 720);
-                if (!usedSizes.has(480)) addSource(fallbackUrl, 480);
+              if (plyrSources.length === 0 && fallbackUrl) {
+                addSource(fallbackUrl, 720);
               }
 
               return (

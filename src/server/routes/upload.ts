@@ -707,9 +707,11 @@ uploadRouter.get('/api/stream-proxy', async (req, res) => {
     if (response.headers['content-length']) {
       res.set('Content-Length', String(response.headers['content-length']));
     }
-    if (response.headers['content-type']) {
-      res.set('Content-Type', String(response.headers['content-type']));
+    let contentType = String(response.headers['content-type'] || '');
+    if (!contentType || contentType === 'text/plain' || targetUrl.includes('.mp4') || targetUrl.includes('zerostorage')) {
+      contentType = 'video/mp4';
     }
+    res.set('Content-Type', contentType);
     res.set('Cache-Control', 'public, max-age=86400');
 
     response.data.pipe(res);

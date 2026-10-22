@@ -20,21 +20,33 @@ export function PlyrPlayer({
   const onQualityChangeRef = useRef(onQualityChange);
   onQualityChangeRef.current = onQualityChange;
 
+  // Keep only distinct sources with valid unique URLs (avoid fake duplicate qualities that slow down playback)
   const normalizedSources = useMemo<PlyrSourceOption[]>(() => {
-    if (sources && sources.length >= 2) {
-      return sources;
+    if (sources && sources.length > 0) {
+      const seen = new Set<string>();
+      const list: PlyrSourceOption[] = [];
+      for (const s of sources) {
+        if (s?.src && typeof s.src === 'string' && !seen.has(s.src.trim())) {
+          seen.add(s.src.trim());
+          list.push({ src: s.src.trim(), size: s.size || 720 });
+        }
+      }
+      if (list.length > 0) return list;
     }
-    const baseSrc = (sources && sources[0]?.src) || src;
-    return [
-      { src: baseSrc, size: 720 },
-      { src: baseSrc, size: 480 },
-    ];
+    return src ? [{ src: src.trim(), size: 720 }] : [];
   }, [sources, src]);
+
+  const hasMultipleQualities = normalizedSources.length > 1;
 
   const sourcesKey = useMemo(
     () => normalizedSources.map((s) => `${s.size}:${s.src}`).join('|'),
     [normalizedSources]
   );
+
+  const activeSrc = useMemo(() => {
+    const match = normalizedSources.find((s) => s.src === src);
+    return match ? match.src : (normalizedSources[0]?.src || src);
+  }, [normalizedSources, src]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -52,20 +64,23 @@ export function PlyrPlayer({
           'play-large',
           'play',
           'progress',
-          'current-time',
+          // Show ONLY total duration ('current-time' removed so elapsed time '00:45 /' is completely omitted)
           'duration',
           'mute',
+          'volume',
           'captions',
           'settings',
           'pip',
           'airplay',
           'fullscreen',
         ],
-        settings: ['quality', 'speed', 'loop'],
-        quality: {
-          default: defaultQuality,
-          options: [1080, 720, 480, 360],
-        },
+        settings: hasMultipleQualities ? ['quality', 'speed', 'loop'] : ['speed', 'loop'],
+        quality: hasMultipleQualities
+          ? {
+              default: defaultQuality,
+              options: qualitySizes,
+            }
+          : undefined,
         i18n: {
           qualityBadge: {
             2160: '4K',
@@ -76,6 +91,8 @@ export function PlyrPlayer({
             480: 'SD',
           },
         },
+        invertTime: false,
+        toggleInvert: false,
         hideControls: false,
         autoplay: false,
         loadSprite: true,
@@ -84,17 +101,19 @@ export function PlyrPlayer({
         seekTime: 10,
       });
 
-      player.on('qualitychange', (event: any) => {
-        const newSize = Number(event?.detail?.plyr?.quality || player?.quality);
-        const matched = normalizedSources.find((s) => s.size === newSize);
-        if (matched && onQualityChangeRef.current) {
-          onQualityChangeRef.current(matched.src, newSize);
-        }
-      });
+      if (hasMultipleQualities) {
+        player.on('qualitychange', (event: any) => {
+          const newSize = Number(event?.detail?.plyr?.quality || player?.quality);
+          const matched = normalizedSources.find((s) => s.size === newSize);
+          if (matched && onQualityChangeRef.current) {
+            onQualityChangeRef.current(matched.src, newSize);
+          }
+        });
+      }
 
       // Stream proxy fallback if direct CDN fails (e.g. strict hotlink or CORS block)
       const handleVideoError = () => {
-        const failedUrl = video.currentSrc || src;
+        const failedUrl = video.currentSrc || activeSrc;
         if (!failedUrl || failedUrl.includes('/api/stream-proxy')) return;
         console.warn(`[Plyr] Direct playback error for "${failedUrl}". Switching to /api/stream-proxy fallback.`);
         const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(failedUrl)}`;
@@ -138,17 +157,17 @@ export function PlyrPlayer({
         playerRef.current = null;
       }
     };
-  }, [sourcesKey]);
+  }, [sourcesKey, hasMultipleQualities]);
 
   useEffect(() => {
-    if (!playerRef.current) return;
+    if (!playerRef.current || !hasMultipleQualities) return;
     const match = normalizedSources.find((s) => s.src === src);
     if (match && playerRef.current.quality !== match.size) {
       try {
         playerRef.current.quality = match.size;
       } catch {}
     }
-  }, [src, normalizedSources]);
+  }, [src, normalizedSources, hasMultipleQualities]);
 
   const directPoster = useMemo(() => {
     if (!poster) return undefined;
@@ -165,10 +184,28 @@ export function PlyrPlayer({
       key={sourcesKey}
       className="plyr-contain-player w-full aspect-video bg-black rounded-xl overflow-hidden relative flex items-center justify-center shadow-inner shrink-0"
     >
+      {/* Global & Scoped CSS to ensure only total duration is visible, suppressing any elapsed time and divider slash */}
+      <style>{`
+        .plyr-contain-player .plyr__time--current {
+          display: none !important;
+        }
+        .plyr-contain-player .plyr__time--duration::before {
+          display: none !important;
+          content: '' !important;
+        }
+        .plyr-contain-player .plyr__time--duration {
+          display: inline-block !important;
+          margin-left: 2px !important;
+          font-variant-numeric: tabular-nums;
+          font-weight: 500;
+        }
+      `}</style>
+
       <video
         ref={videoRef}
+        src={activeSrc}
         playsInline
-        preload="auto"
+        preload="metadata"
         poster={directPoster}
         {...({ referrerPolicy: 'no-referrer' } as any)}
         className="h-full w-full object-contain"
