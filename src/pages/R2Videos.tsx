@@ -31,6 +31,9 @@ export default function R2Videos() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
 
+  // Multiple Selection
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
   // Right Preview Drawer
   const [previewVideo, setPreviewVideo] = useState<R2Video | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -66,6 +69,7 @@ export default function R2Videos() {
     const timer = setTimeout(() => {
       setDebouncedSearch(search.trim());
       setCurrentPage(1);
+      setSelectedIds(new Set());
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
@@ -131,6 +135,34 @@ export default function R2Videos() {
 
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
+  // Toggle selection for a single video
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Select all filtered videos on current page
+  const selectAllFiltered = () => {
+    const allPageIds = new Set(videos.map(v => v.id));
+    setSelectedIds(allPageIds);
+    toast.success(`Selected ${allPageIds.size} videos`);
+  };
+
+  // Toggle select all on page for table view
+  const toggleSelectAll = () => {
+    if (videos.length > 0 && videos.every(v => selectedIds.has(v.id))) {
+      setSelectedIds(new Set());
+    } else {
+      const next = new Set(selectedIds);
+      videos.forEach(v => next.add(v.id));
+      setSelectedIds(next);
+    }
+  };
+
   const handleOpenPreview = (video: R2Video) => {
     setPreviewVideo(video);
     setEditTitle(video.title || '');
@@ -193,28 +225,57 @@ export default function R2Videos() {
     }
   };
 
+  // Delete single or multiple selected videos from Supabase, ZeroStorage, and Abyss
   const handleDeleteConfirm = async () => {
-    if (!videoToDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/r2-videos/${videoToDelete.id}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        toast.success('Video deleted permanently');
-        setVideos(prev => prev.filter(v => v.id !== videoToDelete.id));
-        setTotalCount(prev => Math.max(0, prev - 1));
-        if (previewVideo && previewVideo.id === videoToDelete.id) {
-          setPreviewVideo(null);
+      if (videoToDelete) {
+        // Single delete
+        const res = await fetch(`/api/r2-videos/${videoToDelete.id}`, {
+          method: 'DELETE',
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          toast.success('Video deleted permanently from DB, ZeroStorage, and Abyss');
+          setVideos(prev => prev.filter(v => v.id !== videoToDelete.id));
+          setTotalCount(prev => Math.max(0, prev - 1));
+          setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.delete(videoToDelete.id);
+            return next;
+          });
+          if (previewVideo && previewVideo.id === videoToDelete.id) {
+            setPreviewVideo(null);
+          }
+          setDeleteConfirmOpen(false);
+          setVideoToDelete(null);
+        } else {
+          toast.error(data.error || 'Failed to delete video');
         }
-        setDeleteConfirmOpen(false);
-        setVideoToDelete(null);
-      } else {
-        toast.error(data.error || 'Failed to delete video');
+      } else if (selectedIds.size > 0) {
+        // Batch delete
+        const ids = Array.from(selectedIds);
+        const res = await fetch('/api/r2-videos/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          toast.success(`Deleted ${ids.length} videos from DB, ZeroStorage, and Abyss`);
+          setVideos(prev => prev.filter(v => !selectedIds.has(v.id)));
+          setTotalCount(prev => Math.max(0, prev - ids.length));
+          if (previewVideo && selectedIds.has(previewVideo.id)) {
+            setPreviewVideo(null);
+          }
+          setSelectedIds(new Set());
+          setDeleteConfirmOpen(false);
+        } else {
+          toast.error(data.error || 'Failed to delete selected videos');
+        }
       }
     } catch {
-      toast.error('Network error deleting video');
+      toast.error('Network error deleting videos');
     } finally {
       setIsDeleting(false);
     }
@@ -247,9 +308,16 @@ export default function R2Videos() {
         id="my-files-card" 
         className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm transition-colors"
       >
-        {/* Modular Toolbar with 'My Files' Breadcrumbs */}
+        {/* Modular Toolbar with 'My Files' Breadcrumbs & Selection Actions */}
         <R2Toolbar
           totalCount={totalCount}
+          selectedIds={selectedIds}
+          setSelectedIds={setSelectedIds}
+          selectAllFiltered={selectAllFiltered}
+          onDeleteSelected={() => {
+            setVideoToDelete(null);
+            setDeleteConfirmOpen(true);
+          }}
           search={search}
           setSearch={setSearch}
           sortOrder={sortOrder}
@@ -291,12 +359,9 @@ export default function R2Videos() {
                   key={video.id}
                   video={video}
                   thumbUrl={getFullThumbnailUrl(video.thumbnail)}
+                  isSelected={selectedIds.has(video.id)}
+                  toggleSelect={toggleSelect}
                   onPreview={handleOpenPreview}
-                  onRename={handleOpenRenameModal}
-                  onDelete={(v) => {
-                    setVideoToDelete(v);
-                    setDeleteConfirmOpen(true);
-                  }}
                 />
               ))}
             </div>
@@ -304,12 +369,10 @@ export default function R2Videos() {
             <R2VideoTable
               videos={videos}
               getFullThumbnailUrl={getFullThumbnailUrl}
+              selectedIds={selectedIds}
+              toggleSelect={toggleSelect}
+              toggleSelectAll={toggleSelectAll}
               onPreview={handleOpenPreview}
-              onRename={handleOpenRenameModal}
-              onDelete={(v) => {
-                setVideoToDelete(v);
-                setDeleteConfirmOpen(true);
-              }}
             />
           )}
 
@@ -356,6 +419,7 @@ export default function R2Videos() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         videoToDelete={videoToDelete}
+        selectedCount={videoToDelete ? 1 : selectedIds.size}
         onConfirm={handleDeleteConfirm}
         isDeleting={isDeleting}
       />

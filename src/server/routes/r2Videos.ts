@@ -97,19 +97,127 @@ r2VideosRouter.patch('/api/r2-videos/:id', async (req, res) => {
   }
 });
 
+// Helpers to delete files from external video hosting platforms (ZeroStorage & Abyss)
+function extractZeroStorageFileId(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  const uuidMatch = trimmed.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  if (uuidMatch) return uuidMatch[0];
+  const parts = trimmed.split('/').filter(Boolean);
+  if (parts.length > 0) {
+    const last = parts[parts.length - 1].split('?')[0];
+    return last || null;
+  }
+  return null;
+}
+
+function extractAbyssSlug(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  const parts = trimmed.split('/').filter(Boolean);
+  if (parts.length > 0) {
+    const last = parts[parts.length - 1].split('?')[0];
+    return last || null;
+  }
+  return null;
+}
+
+async function deleteFromZeroStorage(zerostorageUrl: string | null | undefined) {
+  const fileId = extractZeroStorageFileId(zerostorageUrl);
+  if (!fileId) return;
+  const apiKey = process.env.ZEROSTORAGE_API_KEY || 'sk_yiuy_dNgUpsKSGWz5YXD-GBZ-w6iuQnA';
+  try {
+    const res = await fetch(`https://zerostorage.net/api/files/${fileId}`, {
+      method: 'DELETE',
+      headers: {
+        'x-api-key': apiKey,
+      },
+    });
+    console.log(`[ZeroStorage Delete] File ${fileId} deletion HTTP ${res.status}`);
+  } catch (err: any) {
+    console.error(`[ZeroStorage Delete Error] File ${fileId}:`, err?.message || err);
+  }
+}
+
+async function deleteFromAbyss(abyssUrl: string | null | undefined) {
+  const slug = extractAbyssSlug(abyssUrl);
+  if (!slug) return;
+  try {
+    const res = await fetch(`https://api.hydrax.net/9e805aa56a78e2abd1be605e7af7b3cb/delete/${slug}`);
+    const data = await res.json().catch(() => null);
+    console.log(`[Abyss Delete] Slug ${slug} deletion:`, data);
+  } catch (err: any) {
+    console.error(`[Abyss Delete Error] Slug ${slug}:`, err?.message || err);
+  }
+}
+
 r2VideosRouter.delete('/api/r2-videos/:id', async (req, res) => {
   try {
     const sb = getSupabaseClient();
     if (!sb) return res.status(503).json({ error: 'Supabase not configured' });
     const { id } = req.params;
 
+    // 1. Fetch current video row to obtain zerostorage and abyss links
+    const { data: video } = await sb
+      .from('all_videos_db')
+      .select('id, zerostorage, abyss')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (video) {
+      // 2. Concurrently delete from ZeroStorage and Abyss
+      await Promise.allSettled([
+        deleteFromZeroStorage(video.zerostorage),
+        deleteFromAbyss(video.abyss),
+      ]);
+    }
+
+    // 3. Delete from Supabase
     const { error } = await sb
       .from('all_videos_db')
       .delete()
       .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, message: `Video #${id} deleted` });
+    res.json({ success: true, message: `Video #${id} deleted from DB and external platforms` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch delete multiple videos from Supabase, ZeroStorage, and Abyss
+r2VideosRouter.post('/api/r2-videos/batch-delete', async (req, res) => {
+  try {
+    const sb = getSupabaseClient();
+    if (!sb) return res.status(503).json({ error: 'Supabase not configured' });
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    // 1. Fetch rows for all these IDs
+    const { data: videos } = await sb
+      .from('all_videos_db')
+      .select('id, zerostorage, abyss')
+      .in('id', ids);
+
+    // 2. Concurrently delete each from external hosts
+    if (videos && videos.length > 0) {
+      const deleteTasks = videos.flatMap((v) => [
+        deleteFromZeroStorage(v.zerostorage),
+        deleteFromAbyss(v.abyss),
+      ]);
+      await Promise.allSettled(deleteTasks);
+    }
+
+    // 3. Delete from Supabase in batch
+    const { error } = await sb
+      .from('all_videos_db')
+      .delete()
+      .in('id', ids);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, count: ids.length, message: `${ids.length} videos deleted` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

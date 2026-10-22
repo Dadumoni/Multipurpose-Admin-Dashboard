@@ -6,11 +6,16 @@ import {
   Grid2x2, 
   List, 
   RotateCw, 
-  X 
+  X,
+  Trash2 
 } from 'lucide-react';
 
 interface R2ToolbarProps {
   totalCount: number;
+  selectedIds: Set<number>;
+  setSelectedIds: React.Dispatch<React.SetStateAction<Set<number>>>;
+  selectAllFiltered: () => void;
+  onDeleteSelected: () => void;
   search: string;
   setSearch: (s: string) => void;
   sortOrder: 'date_desc' | 'date_asc' | 'views_desc' | 'title_asc';
@@ -25,6 +30,10 @@ interface R2ToolbarProps {
 
 export default function R2Toolbar({
   totalCount,
+  selectedIds,
+  setSelectedIds,
+  selectAllFiltered,
+  onDeleteSelected,
   search,
   setSearch,
   sortOrder,
@@ -42,10 +51,14 @@ export default function R2Toolbar({
       <div className="h-14 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center justify-between bg-white dark:bg-black">
         {/* Left: Breadcrumbs */}
         <div className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-          <div className="flex items-center gap-1.5 font-medium text-black dark:text-white">
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="flex items-center gap-1.5 font-medium text-black dark:text-white hover:underline cursor-pointer"
+          >
             <Folder className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
             <span>My Files</span>
-          </div>
+          </button>
           <ChevronRight className="h-4 w-4 text-zinc-400 dark:text-zinc-600" />
           <span className="text-zinc-500 dark:text-zinc-400 font-medium">All Videos</span>
           <span className="text-xs text-zinc-400 dark:text-zinc-500 ml-1">
@@ -53,8 +66,39 @@ export default function R2Toolbar({
           </span>
         </div>
 
-        {/* Right: Quick Actions */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-2">
+          {/* Multiple Selection Actions */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 text-xs mr-1">
+              {selectedIds.size < totalCount && (
+                <button
+                  type="button"
+                  onClick={selectAllFiltered}
+                  className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white underline mr-1 cursor-pointer hidden sm:inline"
+                >
+                  Select All ({totalCount})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                title="Click to unselect all"
+                className="h-8 px-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>{selectedIds.size} selected</span>
+              </button>
+              <button
+                type="button"
+                onClick={onDeleteSelected}
+                className="h-8 px-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete Selected</span>
+              </button>
+            </div>
+          )}
+
           {/* Refresh button */}
           <button
             type="button"
