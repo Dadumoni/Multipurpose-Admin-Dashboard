@@ -112,6 +112,7 @@ export default function R2PreviewDrawer({
               <PlyrPlayer
                 src={previewVideo.video_link}
                 poster={fullThumbnailUrl}
+                showQuality={false}
               />
             ) : previewVideo.zerostorage ? (
               <div className="aspect-video rounded-xl bg-black overflow-hidden relative border border-zinc-200 dark:border-zinc-800 shadow-sm">

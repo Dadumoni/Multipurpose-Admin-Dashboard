@@ -9,35 +9,27 @@ export function PlyrPlayer({
   poster,
   sources,
   onQualityChange,
+  showQuality = true,
 }: {
   src: string;
   poster?: string | null;
   sources?: PlyrSourceOption[];
   onQualityChange?: (newUrl: string, size: number) => void;
+  showQuality?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
   const onQualityChangeRef = useRef(onQualityChange);
   onQualityChangeRef.current = onQualityChange;
 
-  // Build clean, deduplicated sources list
+  // Build clean sources list
   const normalizedSources = useMemo<PlyrSourceOption[]>(() => {
     if (sources && sources.length > 0) {
-      const seen = new Set<string>();
-      const list: PlyrSourceOption[] = [];
-      for (const s of sources) {
-        if (s?.src && typeof s.src === 'string' && !seen.has(s.src.trim())) {
-          seen.add(s.src.trim());
-          list.push({ src: s.src.trim(), size: s.size || 720 });
-        }
-      }
-      if (list.length > 0) return list;
+      return sources;
     }
     const cleanSrc = (src || '').trim();
     return cleanSrc ? [{ src: cleanSrc, size: 720 }] : [];
   }, [sources, src]);
-
-  const hasMultipleQualities = normalizedSources.length > 1;
 
   const sourcesKey = useMemo(
     () => normalizedSources.map((s) => `${s.size}:${s.src}`).join('|'),
@@ -60,8 +52,7 @@ export function PlyrPlayer({
           'play-large',
           'play',
           'progress',
-          // Keep both current-time and duration in Plyr configuration so Plyr internals
-          // don't crash, but hide current-time and slash separator via CSS
+          // Keep current-time & duration for Plyr stability, hide current-time via CSS so only duration is visible
           'current-time',
           'duration',
           'mute',
@@ -72,7 +63,7 @@ export function PlyrPlayer({
           'airplay',
           'fullscreen',
         ],
-        settings: hasMultipleQualities ? ['quality', 'speed', 'loop'] : ['speed', 'loop'],
+        settings: showQuality ? ['quality', 'speed', 'loop'] : ['speed', 'loop'],
         quality: {
           default: defaultQuality,
           options: [1080, 720, 480, 360],
@@ -97,7 +88,7 @@ export function PlyrPlayer({
         seekTime: 10,
       });
 
-      if (hasMultipleQualities) {
+      if (showQuality) {
         player.on('qualitychange', (event: any) => {
           const newSize = Number(event?.detail?.plyr?.quality || player?.quality);
           const matched = normalizedSources.find((s) => s.size === newSize);
@@ -153,17 +144,17 @@ export function PlyrPlayer({
         playerRef.current = null;
       }
     };
-  }, [sourcesKey, hasMultipleQualities]);
+  }, [sourcesKey, showQuality]);
 
   useEffect(() => {
-    if (!playerRef.current || !hasMultipleQualities) return;
+    if (!playerRef.current || !showQuality) return;
     const match = normalizedSources.find((s) => s.src === src);
     if (match && playerRef.current.quality !== match.size) {
       try {
         playerRef.current.quality = match.size;
       } catch {}
     }
-  }, [src, normalizedSources, hasMultipleQualities]);
+  }, [src, normalizedSources, showQuality]);
 
   const directPoster = useMemo(() => {
     if (!poster) return undefined;
