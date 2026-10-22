@@ -20,7 +20,7 @@ export function PlyrPlayer({
   const onQualityChangeRef = useRef(onQualityChange);
   onQualityChangeRef.current = onQualityChange;
 
-  // Keep only distinct sources with valid unique URLs (avoid fake duplicate qualities that slow down playback)
+  // Build clean, deduplicated sources list
   const normalizedSources = useMemo<PlyrSourceOption[]>(() => {
     if (sources && sources.length > 0) {
       const seen = new Set<string>();
@@ -33,7 +33,8 @@ export function PlyrPlayer({
       }
       if (list.length > 0) return list;
     }
-    return src ? [{ src: src.trim(), size: 720 }] : [];
+    const cleanSrc = (src || '').trim();
+    return cleanSrc ? [{ src: cleanSrc, size: 720 }] : [];
   }, [sources, src]);
 
   const hasMultipleQualities = normalizedSources.length > 1;
@@ -42,11 +43,6 @@ export function PlyrPlayer({
     () => normalizedSources.map((s) => `${s.size}:${s.src}`).join('|'),
     [normalizedSources]
   );
-
-  const activeSrc = useMemo(() => {
-    const match = normalizedSources.find((s) => s.src === src);
-    return match ? match.src : (normalizedSources[0]?.src || src);
-  }, [normalizedSources, src]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -64,7 +60,9 @@ export function PlyrPlayer({
           'play-large',
           'play',
           'progress',
-          // Show ONLY total duration ('current-time' removed so elapsed time '00:45 /' is completely omitted)
+          // Keep both current-time and duration in Plyr configuration so Plyr internals
+          // don't crash, but hide current-time and slash separator via CSS
+          'current-time',
           'duration',
           'mute',
           'volume',
@@ -75,12 +73,10 @@ export function PlyrPlayer({
           'fullscreen',
         ],
         settings: hasMultipleQualities ? ['quality', 'speed', 'loop'] : ['speed', 'loop'],
-        quality: hasMultipleQualities
-          ? {
-              default: defaultQuality,
-              options: qualitySizes,
-            }
-          : undefined,
+        quality: {
+          default: defaultQuality,
+          options: [1080, 720, 480, 360],
+        },
         i18n: {
           qualityBadge: {
             2160: '4K',
@@ -111,9 +107,9 @@ export function PlyrPlayer({
         });
       }
 
-      // Stream proxy fallback if direct CDN fails (e.g. strict hotlink or CORS block)
+      // Stream proxy fallback if direct video fails to buffer/play (e.g. strict hotlink, text/plain, or CORS block)
       const handleVideoError = () => {
-        const failedUrl = video.currentSrc || activeSrc;
+        const failedUrl = video.currentSrc || (normalizedSources[0]?.src) || src;
         if (!failedUrl || failedUrl.includes('/api/stream-proxy')) return;
         console.warn(`[Plyr] Direct playback error for "${failedUrl}". Switching to /api/stream-proxy fallback.`);
         const proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(failedUrl)}`;
@@ -144,7 +140,7 @@ export function PlyrPlayer({
 
       playerRef.current = player;
     } catch (e) {
-      console.warn('Plyr init:', e);
+      console.warn('[Plyr] init error:', e);
     }
 
     return () => {
@@ -184,18 +180,19 @@ export function PlyrPlayer({
       key={sourcesKey}
       className="plyr-contain-player w-full aspect-video bg-black rounded-xl overflow-hidden relative flex items-center justify-center shadow-inner shrink-0"
     >
-      {/* Global & Scoped CSS to ensure only total duration is visible, suppressing any elapsed time and divider slash */}
+      {/* CSS: Show ONLY total duration ('01:02'), completely hiding current play time ('00:45') and the slash divider ('/') */}
       <style>{`
         .plyr-contain-player .plyr__time--current {
           display: none !important;
         }
+        .plyr-contain-player .plyr__time + .plyr__time::before,
         .plyr-contain-player .plyr__time--duration::before {
           display: none !important;
           content: '' !important;
         }
         .plyr-contain-player .plyr__time--duration {
           display: inline-block !important;
-          margin-left: 2px !important;
+          margin-left: 3px !important;
           font-variant-numeric: tabular-nums;
           font-weight: 500;
         }
@@ -203,16 +200,20 @@ export function PlyrPlayer({
 
       <video
         ref={videoRef}
-        src={activeSrc}
         playsInline
-        preload="metadata"
+        preload="auto"
         poster={directPoster}
         {...({ referrerPolicy: 'no-referrer' } as any)}
         className="h-full w-full object-contain"
         style={{ objectFit: 'contain' }}
       >
         {normalizedSources.map((s) => (
-          <source key={s.size} src={s.src} type="video/mp4" {...({ size: s.size, referrerPolicy: 'no-referrer' } as any)} />
+          <source
+            key={s.size}
+            src={s.src}
+            type="video/mp4"
+            {...({ size: s.size, referrerPolicy: 'no-referrer' } as any)}
+          />
         ))}
       </video>
     </div>
