@@ -88,7 +88,7 @@ export default function R2Videos() {
         const data = await res.json();
         if (data.success && Array.isArray(data.videos)) {
           setVideos(data.videos);
-          setTotalCount(data.total || 0);
+          setTotalCount(data.totalCount ?? data.total ?? 0);
           setTotalViews(data.totalViews || 0);
           setLoading(false);
           setRefreshing(false);
@@ -99,14 +99,14 @@ export default function R2Videos() {
       // Direct fallback to Supabase all_videos_db
       let query = supabase
         .from('all_videos_db')
-        .select('id, slug, title, thumbnail, video_link, zerostorage, abyss, anonmp4, views, created_at', { count: 'exact' });
+        .select('id, slug, title, thumbnail, video_link, zerostorage, abyss, anonmp4, views, created_at, file_size, duration', { count: 'exact' });
 
       if (debouncedSearch) {
         query = query.or(`title.ilike.%${debouncedSearch}%,slug.ilike.%${debouncedSearch}%`);
       }
 
-      if (sortOrder === 'date_desc') query = query.order('created_at', { ascending: false });
-      else if (sortOrder === 'date_asc') query = query.order('created_at', { ascending: true });
+      if (sortOrder === 'date_desc') query = query.order('id', { ascending: false });
+      else if (sortOrder === 'date_asc') query = query.order('id', { ascending: true });
       else if (sortOrder === 'views_desc') query = query.order('views', { ascending: false });
       else if (sortOrder === 'title_asc') query = query.order('title', { ascending: true });
 
@@ -180,6 +180,9 @@ export default function R2Videos() {
       if (res.ok && data.success) {
         toast.success('Video renamed successfully');
         setVideos(prev => prev.map(v => v.id === videoToRename.id ? { ...v, title: newTitleInput.trim() } : v));
+        if (previewVideo && previewVideo.id === videoToRename.id) {
+          setPreviewVideo(prev => prev ? { ...prev, title: newTitleInput.trim() } : null);
+        }
         setRenameModalOpen(false);
         setVideoToRename(null);
       } else {
@@ -225,24 +228,28 @@ export default function R2Videos() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
+      {/* Page Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-black dark:text-white flex items-center gap-2.5">
           <Video className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
           <span>Cloudflare R2 Videos</span>
         </h1>
         <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-          Catalog of video streams hosted on Cloudflare R2 and synced to Supabase.
+          Catalog of video streams hosted on Cloudflare R2 and synced to Supabase <code>all_videos_db</code>.
         </p>
       </div>
 
       {/* Reusable Stats Cards */}
       <R2StatsCards totalCount={totalCount} totalViews={totalViews} />
 
-      {/* Main Content Area */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
-        {/* Reusable Toolbar */}
+      {/* FILE MANAGER AREA: Same 'my-files-card' layout as All Videos */}
+      <div 
+        id="my-files-card" 
+        className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm transition-colors"
+      >
+        {/* Modular Toolbar with 'My Files' Breadcrumbs */}
         <R2Toolbar
+          totalCount={totalCount}
           search={search}
           setSearch={setSearch}
           sortOrder={sortOrder}
@@ -255,66 +262,68 @@ export default function R2Videos() {
           refreshing={refreshing}
         />
 
-        {/* Content View */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 py-4">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black overflow-hidden animate-pulse">
-                <div className="aspect-video bg-zinc-200 dark:bg-zinc-800" />
-                <div className="p-3 space-y-2">
-                  <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4" />
-                  <div className="h-3 bg-zinc-100 dark:bg-zinc-900 rounded w-1/2" />
+        {/* Content Area */}
+        <div className="p-4 bg-white dark:bg-black">
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black overflow-hidden animate-pulse">
+                  <div className="aspect-video bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="p-3 space-y-2">
+                    <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4" />
+                    <div className="h-3 bg-zinc-100 dark:bg-zinc-900 rounded w-1/2" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : videos.length === 0 ? (
-          <div className="py-16 text-center">
-            <Video className="mx-auto h-10 w-10 text-zinc-300 dark:text-zinc-700" />
-            <h3 className="mt-2 text-sm font-semibold text-black dark:text-white">No R2 Videos Found</h3>
-            <p className="mt-1 text-xs text-zinc-500">
-              {debouncedSearch ? 'No videos matching your search criteria.' : 'Videos registered in all_videos_db will appear here.'}
-            </p>
-          </div>
-        ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {videos.map((video) => (
-              <R2VideoCard
-                key={video.id}
-                video={video}
-                thumbUrl={getFullThumbnailUrl(video.thumbnail)}
-                onPreview={handleOpenPreview}
-                onRename={handleOpenRenameModal}
-                onDelete={(v) => {
-                  setVideoToDelete(v);
-                  setDeleteConfirmOpen(true);
-                }}
-              />
-            ))}
-          </div>
-        ) : (
-          <R2VideoTable
-            videos={videos}
-            getFullThumbnailUrl={getFullThumbnailUrl}
-            onPreview={handleOpenPreview}
-            onRename={handleOpenRenameModal}
-            onDelete={(v) => {
-              setVideoToDelete(v);
-              setDeleteConfirmOpen(true);
-            }}
-          />
-        )}
+              ))}
+            </div>
+          ) : videos.length === 0 ? (
+            <div className="py-16 text-center">
+              <Video className="mx-auto h-10 w-10 text-zinc-300 dark:text-zinc-700" />
+              <h3 className="mt-2 text-sm font-semibold text-black dark:text-white">No R2 Videos Found</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                {debouncedSearch ? 'No videos matching your search criteria.' : 'Videos registered in all_videos_db will appear here.'}
+              </p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {videos.map((video) => (
+                <R2VideoCard
+                  key={video.id}
+                  video={video}
+                  thumbUrl={getFullThumbnailUrl(video.thumbnail)}
+                  onPreview={handleOpenPreview}
+                  onRename={handleOpenRenameModal}
+                  onDelete={(v) => {
+                    setVideoToDelete(v);
+                    setDeleteConfirmOpen(true);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <R2VideoTable
+              videos={videos}
+              getFullThumbnailUrl={getFullThumbnailUrl}
+              onPreview={handleOpenPreview}
+              onRename={handleOpenRenameModal}
+              onDelete={(v) => {
+                setVideoToDelete(v);
+                setDeleteConfirmOpen(true);
+              }}
+            />
+          )}
 
-        {/* Reusable Pagination */}
-        <R2Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          onPageChange={setCurrentPage}
-        />
+          {/* Reusable Pagination */}
+          <R2Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            onPageChange={setCurrentPage}
+          />
+        </div>
       </div>
 
-      {/* Reusable Preview Drawer */}
+      {/* Reusable Preview Drawer matching VideoPreviewDrawer */}
       <R2PreviewDrawer
         previewVideo={previewVideo}
         onClose={() => setPreviewVideo(null)}
@@ -325,6 +334,10 @@ export default function R2Videos() {
         setIsEditingTitle={setIsEditingTitle}
         onSaveTitle={handleSaveTitle}
         isSavingTitle={isSavingTitle}
+        onDeleteVideo={(video) => {
+          setVideoToDelete(video);
+          setDeleteConfirmOpen(true);
+        }}
         onCopyText={copyToClipboard}
       />
 
