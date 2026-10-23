@@ -9,9 +9,8 @@ import crypto from 'crypto';
 import { spawn } from 'child_process';
 import sharp from 'sharp';
 import axios from 'axios';
-import mongoose from 'mongoose';
 import { getR2Client, getR2PublicUrl } from '../r2Helper.js';
-import { connectToDatabase, PostModel } from '../db.js';
+import { supabase } from '../db.js';
 import { invalidatePostsCache } from '../cache.js';
 
 export const uploadRouter = express.Router();
@@ -232,21 +231,15 @@ uploadRouter.post('/api/upload/thumbnail', async (req, res) => {
     const targetPostId = postId || (id !== 'thumb' ? id : undefined);
     if (targetPostId) {
       try {
-        await connectToDatabase();
-        const isValidMongoId = mongoose.isValidObjectId(targetPostId);
         const numId = Number(targetPostId);
-        const filter = !isNaN(numId)
-          ? (isValidMongoId ? { $or: [{ id: numId }, { _id: targetPostId }, { video_id: String(targetPostId) }] } : { $or: [{ id: numId }, { video_id: String(targetPostId) }] })
-          : (isValidMongoId ? { $or: [{ _id: targetPostId }, { video_id: String(targetPostId) }] } : { $or: [{ video_id: String(targetPostId) }, { video_url: targetPostId }] });
-
-        await PostModel.findOneAndUpdate(
-          filter,
-          { $set: { thumbnail_url: r2PublicUrl } },
-          { returnDocument: 'after' }
-        );
+        if (!isNaN(numId)) {
+          await supabase.from('viralhub_db').update({ thumbnail_url: r2PublicUrl }).eq('id', numId);
+        } else {
+          await supabase.from('viralhub_db').update({ thumbnail_url: r2PublicUrl }).or(`video_id.eq.${targetPostId},video_url.eq.${targetPostId}`);
+        }
         invalidatePostsCache();
       } catch (dbErr) {
-        console.warn('[Cloudflare R2] Database update notice:', dbErr);
+        console.warn('[Cloudflare R2] Supabase update notice:', dbErr);
       }
     }
 
@@ -469,21 +462,15 @@ uploadRouter.post('/api/thumbnails/generate-ffmpeg', async (req, res) => {
     const targetPostId = req.body.postId || (id !== 'thumb' ? id : undefined);
     if (targetPostId) {
       try {
-        await connectToDatabase();
-        const isValidMongoId = mongoose.isValidObjectId(targetPostId);
         const numId = Number(targetPostId);
-        const filter = !isNaN(numId)
-          ? (isValidMongoId ? { $or: [{ id: numId }, { _id: targetPostId }, { video_id: String(targetPostId) }] } : { $or: [{ id: numId }, { video_id: String(targetPostId) }] })
-          : (isValidMongoId ? { $or: [{ _id: targetPostId }, { video_id: String(targetPostId) }] } : { $or: [{ video_id: String(targetPostId) }, { video_url: targetPostId }] });
-
-        await PostModel.findOneAndUpdate(
-          filter,
-          { $set: { thumbnail_url: finalUrl } },
-          { returnDocument: 'after' }
-        );
+        if (!isNaN(numId)) {
+          await supabase.from('viralhub_db').update({ thumbnail_url: finalUrl }).eq('id', numId);
+        } else {
+          await supabase.from('viralhub_db').update({ thumbnail_url: finalUrl }).or(`video_id.eq.${targetPostId},video_url.eq.${targetPostId}`);
+        }
         invalidatePostsCache();
       } catch (dbErr) {
-        console.warn('[Cloudflare R2] Database update notice:', dbErr);
+        console.warn('[Cloudflare R2] Supabase update notice:', dbErr);
       }
     }
 

@@ -29,7 +29,7 @@ export default function R2Videos() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
+  const [pageSize, setPageSize] = useState(12);
 
   // Multiple Selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

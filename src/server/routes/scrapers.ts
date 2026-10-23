@@ -6,7 +6,7 @@ import {
   stopSiteScraper,
   startSiteScraper,
 } from '../scrapers/scraperManager.js';
-import { connectToDatabase, ScraperSiteModel, DashboardStatsModel } from '../db.js';
+import { connectToDatabase, ScraperSiteModel, DashboardStatsModel } from '../../lib/mongodb.js';
 
 export const scrapersRouter = express.Router();
 
@@ -82,8 +82,8 @@ scrapersRouter.get('/api/scrapers', async (_req, res) => {
       DashboardStatsModel.findOne({ id: 'global_stats' }).lean(),
     ]);
 
-    const totalScraped = ds?.total_post_scraped ?? sites.reduce((acc, s) => acc + (s.total_scraped || 0), 0);
-    const totalFailed = ds?.failed_extractions ?? sites.reduce((acc, s) => acc + (s.failed_count || 0), 0);
+    const totalScraped = ds?.total_post_scraped ?? sites.reduce((acc: number, s: any) => acc + (s.total_scraped || 0), 0);
+    const totalFailed = ds?.failed_extractions ?? sites.reduce((acc: number, s: any) => acc + (s.failed_count || 0), 0);
 
     res.json({
       success: true,

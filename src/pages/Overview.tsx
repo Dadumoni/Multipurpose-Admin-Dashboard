@@ -69,10 +69,10 @@ export default function Overview() {
   const [stats, setStats] = useState<OverviewStatsData>({
     totalVideos: 0,
     totalViews: 0,
-    totalScraped: 0,
     totalUploaded: 0,
-    mongoTotalVideos: 0,
-    supabaseTotal: 0,
+    totalR2Videos: 0,
+    missingThumbnail: 0,
+    videoSource: 0,
   });
 
   const [monthlyTraffic, setMonthlyTraffic] = useState<DailyTrafficPoint[]>(() => getInitialMonthlyTraffic(curYear, curMonth));

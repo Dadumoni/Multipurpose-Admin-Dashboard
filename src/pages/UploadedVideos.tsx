@@ -29,7 +29,7 @@ export default function UploadedVideos() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 24;
+  const pageSize = 12;
 
   // Preview Drawer
   const [previewVideo, setPreviewVideo] = useState<TelegramUploadedVideo | null>(null);
@@ -56,11 +56,11 @@ export default function UploadedVideos() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Load videos from backend
+  // Load videos from backend with Server-Side Pagination & FIFO queue
   const loadVideos = useCallback(async (forceRefresh = false) => {
-    const cacheKey = 'telegram_uploaded:list';
+    const cacheKey = `telegram_uploaded:p${currentPage}:l${pageSize}:s${debouncedSearch}:o${sortOrder}`;
     if (!forceRefresh) {
-      const cached = getClientCache<{ items: TelegramUploadedVideo[]; totalCount: number; zeroStorageCount: number }>(cacheKey, 60000);
+      const cached = getClientCache<{ items: TelegramUploadedVideo[]; totalCount: number; zeroStorageCount: number }>(cacheKey, 30000);
       if (cached && Array.isArray(cached.items)) {
         setVideos(cached.items);
         setTotalCount(cached.totalCount);
@@ -74,19 +74,26 @@ export default function UploadedVideos() {
 
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/telegram-bot/uploaded?limit=500${forceRefresh ? '&refresh=true' : ''}`);
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(pageSize),
+        search: debouncedSearch,
+        sort: sortOrder,
+      });
+      if (forceRefresh) params.append('refresh', 'true');
+
+      const res = await fetch(`/api/telegram-uploaded?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.videos)) {
           setVideos(data.videos);
-          setTotalCount(data.total || data.videos.length);
-          const zeroCount = data.videos.filter((v: any) => v.zerostorage_file_id || v.zerostorage_download_url).length;
-          setZeroStorageCount(zeroCount);
+          setTotalCount(data.totalCount || data.total || 0);
+          setZeroStorageCount(data.zeroStorageCount || 0);
 
           setClientCache(cacheKey, {
             items: data.videos,
-            totalCount: data.total || data.videos.length,
-            zeroStorageCount: zeroCount,
+            totalCount: data.totalCount || data.total || 0,
+            zeroStorageCount: data.zeroStorageCount || 0,
           });
         }
       }
@@ -96,7 +103,7 @@ export default function UploadedVideos() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentPage, pageSize, debouncedSearch, sortOrder]);
 
   // Fetch storage statistics
   const loadStorageStats = useCallback(async () => {
@@ -113,42 +120,13 @@ export default function UploadedVideos() {
 
   useEffect(() => {
     loadVideos();
+  }, [loadVideos]);
+
+  useEffect(() => {
     loadStorageStats();
-  }, [loadVideos, loadStorageStats]);
+  }, [loadStorageStats]);
 
-  // Client-side filtering & sorting
-  const filteredVideos = useMemo(() => {
-    let list = [...videos];
-    if (debouncedSearch) {
-      list = list.filter((v) => {
-        const t = (v.title || '').toLowerCase();
-        const f = (v.file_name || '').toLowerCase();
-        const id = (v.id || '').toLowerCase();
-        return t.includes(debouncedSearch) || f.includes(debouncedSearch) || id.includes(debouncedSearch);
-      });
-    }
-
-    list.sort((a, b) => {
-      if (sortOrder === 'date_desc') {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-      if (sortOrder === 'date_asc') {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      }
-      if (sortOrder === 'title_asc') {
-        return (a.title || '').localeCompare(b.title || '');
-      }
-      return 0;
-    });
-
-    return list;
-  }, [videos, debouncedSearch, sortOrder]);
-
-  const totalPages = Math.ceil(filteredVideos.length / pageSize) || 1;
-  const paginatedVideos = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredVideos.slice(start, start + pageSize);
-  }, [filteredVideos, currentPage, pageSize]);
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
   const handleOpenPreview = (video: TelegramUploadedVideo) => {
     setPreviewVideo(video);
@@ -229,7 +207,7 @@ export default function UploadedVideos() {
       />
 
       {/* Main Content Area */}
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
+      <div id="my-files-card" className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
         {/* Reusable Toolbar */}
         <UploadedToolbar
           search={search}
@@ -255,7 +233,7 @@ export default function UploadedVideos() {
               </div>
             ))}
           </div>
-        ) : filteredVideos.length === 0 ? (
+        ) : videos.length === 0 ? (
           <div className="py-16 text-center">
             <Film className="mx-auto h-10 w-10 text-zinc-300 dark:text-zinc-700" />
             <h3 className="mt-2 text-sm font-semibold text-black dark:text-white">No Uploaded Videos Found</h3>
@@ -265,7 +243,7 @@ export default function UploadedVideos() {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {paginatedVideos.map((video) => (
+            {videos.map((video) => (
               <UploadedVideoCard
                 key={video.id}
                 video={video}
@@ -280,7 +258,7 @@ export default function UploadedVideos() {
           </div>
         ) : (
           <UploadedVideoTable
-            videos={paginatedVideos}
+            videos={videos}
             onOpenPreview={handleOpenPreview}
             onCopyLink={copyToClipboard}
             onDelete={(v) => {

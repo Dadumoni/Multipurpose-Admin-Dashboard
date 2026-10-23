@@ -1,19 +1,14 @@
 import express from 'express';
 import crypto from 'crypto';
-import {
-  connectToDatabase,
-  UploadedVideoModel,
-  TrackedFileModel,
-  PostModel,
-  getSupabaseClient,
-  adjustMongoTotalVideos,
-} from '../db.js';
-import { syncPostMutation } from '../sync.js';
+import { getSupabaseClient } from '../db.js';
 
 export const r2VideosRouter = express.Router();
 
+const R2_PROJECTION = 'id, slug, title, thumbnail, video_link, zerostorage, abyss, anonmp4, views, created_at, file_size, duration';
+const TG_PROJECTION = 'id, title, description, video_url, thumbnail_url, views, file_size, duration, file_id, telegram_file_id, telegram_file_unique_id, zerostorage_file_id, zerostorage_download_url, zerostorage_embed_url, upload_type, source, metadata, created_at';
+
 // ============================================================
-// R2 VIDEOS (all_videos_db from Supabase)
+// 1. R2 VIDEOS (all_videos_db from Supabase) - Server-Side Pagination & FIFO Queue
 // ============================================================
 r2VideosRouter.get('/api/r2-videos', async (req, res) => {
   try {
@@ -25,15 +20,16 @@ r2VideosRouter.get('/api/r2-videos', async (req, res) => {
     const search = (req.query.search as string || '').trim();
     const sort = (req.query.sort as string) || 'date_desc';
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string) || 24));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 12));
     const offset = (page - 1) * limit;
 
-    let query = sb.from('all_videos_db').select('*', { count: 'exact' });
+    let query = sb.from('all_videos_db').select(R2_PROJECTION, { count: 'exact' });
 
     if (search) {
       query = query.or(`title.ilike.%${search}%,slug.ilike.%${search}%`);
     }
 
+    // Auto-Shift / FIFO Queue Ordering
     if (sort === 'date_asc') {
       query = query.order('id', { ascending: true });
     } else if (sort === 'views_desc') {
@@ -66,7 +62,7 @@ r2VideosRouter.get('/api/r2-videos', async (req, res) => {
       totalViews,
       page,
       limit,
-      totalPages: Math.ceil((count || 0) / limit),
+      totalPages: Math.ceil((totalVideosCount || 0) / limit) || 1,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Internal error' });
@@ -157,7 +153,6 @@ r2VideosRouter.delete('/api/r2-videos/:id', async (req, res) => {
     if (!sb) return res.status(503).json({ error: 'Supabase not configured' });
     const { id } = req.params;
 
-    // 1. Fetch current video row to obtain zerostorage and abyss links
     const { data: video } = await sb
       .from('all_videos_db')
       .select('id, zerostorage, abyss')
@@ -165,14 +160,12 @@ r2VideosRouter.delete('/api/r2-videos/:id', async (req, res) => {
       .maybeSingle();
 
     if (video) {
-      // 2. Concurrently delete from ZeroStorage and Abyss
       await Promise.allSettled([
         deleteFromZeroStorage(video.zerostorage),
         deleteFromAbyss(video.abyss),
       ]);
     }
 
-    // 3. Delete from Supabase
     const { error } = await sb
       .from('all_videos_db')
       .delete()
@@ -195,13 +188,11 @@ r2VideosRouter.post('/api/r2-videos/batch-delete', async (req, res) => {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
-    // 1. Fetch rows for all these IDs
     const { data: videos } = await sb
       .from('all_videos_db')
       .select('id, zerostorage, abyss')
       .in('id', ids);
 
-    // 2. Concurrently delete each from external hosts
     if (videos && videos.length > 0) {
       const deleteTasks = videos.flatMap((v) => [
         deleteFromZeroStorage(v.zerostorage),
@@ -210,7 +201,6 @@ r2VideosRouter.post('/api/r2-videos/batch-delete', async (req, res) => {
       await Promise.allSettled(deleteTasks);
     }
 
-    // 3. Delete from Supabase in batch
     const { error } = await sb
       .from('all_videos_db')
       .delete()
@@ -223,267 +213,126 @@ r2VideosRouter.post('/api/r2-videos/batch-delete', async (req, res) => {
   }
 });
 
-// 5. GET /api/uploaded-videos - List uploaded videos from MongoDB
-r2VideosRouter.get('/api/uploaded-videos', async (_req, res) => {
+// ============================================================
+// 2. TELEGRAM UPLOADED VIDEOS (telegram_uploaded in Supabase)
+// ============================================================
+r2VideosRouter.get(['/api/telegram-uploaded', '/api/telegram-bot/uploaded'], async (req, res) => {
   try {
-    await connectToDatabase();
-    const items = await UploadedVideoModel.find().sort({ created_at: -1 }).lean();
-    res.json({ data: items });
-  } catch (error: any) {
-    console.error('Failed to query uploaded videos from MongoDB:', error);
-    res.status(500).json({ error: error.message || 'Failed to query uploaded videos' });
-  }
-});
+    const sb = getSupabaseClient();
+    if (!sb) return res.status(503).json({ error: 'Supabase client not configured' });
 
-// 6. POST /api/uploaded-videos - Create uploaded video in MongoDB
-r2VideosRouter.post('/api/uploaded-videos', async (req, res) => {
-  try {
-    await connectToDatabase();
-    const { title, description, video_url, thumbnail_url, file_size, duration, upload_type } = req.body;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 12));
+    const search = (req.query.search as string || '').trim();
+    const sort = (req.query.sort as string) || 'date_desc';
 
-    if (!title || !video_url) {
-      return res.status(400).json({ error: 'Title and video_url are required' });
+    let query = sb
+      .from('telegram_uploaded')
+      .select(TG_PROJECTION, { count: 'exact' });
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
-    const id = crypto.randomUUID();
-    const newVideo = await UploadedVideoModel.create({
-      id,
-      title,
-      description: description || null,
-      video_url,
-      thumbnail_url: thumbnail_url || null,
-      file_size: file_size || '42.0 MB',
-      duration: duration || '03:15',
-      upload_type: upload_type || 'upload',
-      views: 0,
-      created_at: new Date(),
-    });
-
-    // Also upsert into MongoDB 'post' collection so all videos stay accessible
-    await PostModel.updateOne(
-      { video_url },
-      {
-        $set: {
-          title,
-          video_url,
-          thumbnail_url: thumbnail_url || null,
-          created_at: new Date(),
-          views: 0,
-          synced_at: new Date(),
-        },
-      },
-      { upsert: true }
-    );
-    await adjustMongoTotalVideos(1);
-
-    try {
-      const fileHash = crypto.createHash('sha256').update(video_url).digest('hex');
-      await TrackedFileModel.updateOne(
-        { file_hash: fileHash },
-        {
-          $set: {
-            id,
-            file_hash: fileHash,
-            file_name: title,
-            file_size: file_size || null,
-            mime_type: 'video/mp4',
-            source: 'dashboard',
-            zerostorage_download_url: video_url,
-            title,
-            thumbnail_url: thumbnail_url || null,
-            created_at: new Date(),
-          },
-        },
-        { upsert: true }
-      );
-    } catch (trackErr) {
-      console.warn('Tracked file save notice:', trackErr);
+    // Auto-Shift / FIFO Queue Ordering
+    if (sort === 'date_asc') {
+      query = query.order('created_at', { ascending: true });
+    } else if (sort === 'views_desc') {
+      query = query.order('views', { ascending: false });
+    } else if (sort === 'title_asc') {
+      query = query.order('title', { ascending: true });
+    } else {
+      query = query.order('created_at', { ascending: false });
     }
 
-    syncPostMutation({ action: 'add', post: { title, video_url, thumbnail_url: thumbnail_url || null } }).catch(err => {
-      console.warn('Background Supabase sync error:', err?.message || err);
-    });
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
 
-    res.status(201).json({ success: true, data: newVideo });
-  } catch (error: any) {
-    console.error('Failed to create uploaded video in MongoDB:', error);
-    res.status(500).json({ error: error.message || 'Failed to create uploaded video' });
-  }
-});
+    const { data: items, count, error } = await query;
+    if (error) throw error;
 
-// 7. DELETE /api/uploaded-videos/:id - Delete uploaded video from MongoDB
-r2VideosRouter.delete('/api/uploaded-videos/:id', async (req, res) => {
-  try {
-    await connectToDatabase();
-    const id = req.params.id;
-    const existing = await UploadedVideoModel.findOne({ id });
+    const totalCount = count !== null ? count : (items?.length || 0);
 
-    if (!existing) {
-      return res.status(404).json({ error: 'Video not found' });
-    }
-
-    await UploadedVideoModel.deleteOne({ id });
-    if (existing.video_url) {
-      await PostModel.deleteOne({ video_url: existing.video_url });
-      await adjustMongoTotalVideos(-1);
-      syncPostMutation({ action: 'delete', video_url: existing.video_url }).catch(err => {
-        console.warn('Background Supabase delete sync error:', err?.message || err);
-      });
-    }
-
-    res.json({ success: true, message: 'Uploaded video deleted from MongoDB' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to delete uploaded video' });
-  }
-});
-
-// 8. POST /api/uploaded-videos/bulk-delete - Bulk delete uploaded videos
-r2VideosRouter.post('/api/uploaded-videos/bulk-delete', async (req, res) => {
-  try {
-    await connectToDatabase();
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'IDs array required' });
-    }
-
-    const toDelete = await UploadedVideoModel.find({ id: { $in: ids } }).lean();
-    await UploadedVideoModel.deleteMany({ id: { $in: ids } });
-
-    const urls = toDelete.map(v => v.video_url).filter(Boolean);
-    if (urls.length > 0) {
-      await PostModel.deleteMany({ video_url: { $in: urls } });
-      await adjustMongoTotalVideos(-urls.length);
-      syncPostMutation({ action: 'delete', video_urls: urls }).catch(err => {
-        console.warn('Background Supabase bulk delete sync error:', err?.message || err);
-      });
-    }
-
-    res.json({ success: true, count: toDelete.length });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to bulk delete uploaded videos' });
-  }
-});
-
-// 8b. GET /api/telegram-uploaded - Query all Telegram to ZeroStorage / MongoDB uploaded videos
-r2VideosRouter.get('/api/telegram-uploaded', async (_req, res) => {
-  try {
-    await connectToDatabase();
-    const [trackedFiles, uploadedVideos] = await Promise.all([
-      TrackedFileModel.find().sort({ created_at: -1 }).lean(),
-      UploadedVideoModel.find().sort({ created_at: -1 }).lean(),
-    ]);
-
-    const itemMap = new Map<string, any>();
-
-    for (const tf of trackedFiles) {
-      const key = String(tf.id || tf._id || tf.file_hash);
-      itemMap.set(key, {
-        id: String(tf.id || tf._id),
-        title: tf.title || tf.file_name || 'Untitled Video',
-        file_name: tf.file_name || tf.title || 'video.mp4',
-        file_size: tf.file_size || 'Video File',
-        mime_type: tf.mime_type || 'video/mp4',
-        source: tf.source || 'telegram',
-        telegram_file_id: tf.telegram_file_id || null,
-        telegram_file_unique_id: tf.telegram_file_unique_id || null,
-        zerostorage_file_id: tf.zerostorage_file_id || null,
-        zerostorage_download_url: tf.zerostorage_download_url || null,
-        zerostorage_embed_url: tf.zerostorage_embed_url || null,
-        video_url: tf.zerostorage_download_url || tf.zerostorage_embed_url || '',
-        thumbnail_url: tf.thumbnail_url || null,
-        created_at: tf.created_at || new Date().toISOString(),
-      });
-    }
-
-    for (const uv of uploadedVideos) {
-      const key = String(uv.id || uv._id);
-      if (!itemMap.has(key)) {
-        itemMap.set(key, {
-          id: String(uv.id || uv._id),
-          title: uv.title || 'Untitled Video',
-          file_name: uv.title || 'video.mp4',
-          file_size: uv.file_size || 'Video File',
-          mime_type: 'video/mp4',
-          source: uv.source || 'telegram',
-          telegram_file_id: uv.file_id || null,
-          telegram_file_unique_id: null,
-          zerostorage_file_id: null,
-          zerostorage_download_url: uv.video_url?.includes('zerostorage') ? uv.video_url : null,
-          zerostorage_embed_url: null,
-          video_url: uv.video_url || '',
-          thumbnail_url: uv.thumbnail_url || null,
-          created_at: uv.created_at || new Date().toISOString(),
-        });
-      }
-    }
-
-    const items = Array.from(itemMap.values()).sort((a, b) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-
-    const zeroStorageCount = items.filter(i => Boolean(
+    const zeroStorageCount = (items || []).filter(i => Boolean(
       i.zerostorage_download_url || i.zerostorage_file_id || i.zerostorage_embed_url || i.video_url?.includes('zerostorage')
     )).length;
 
     res.json({
-      data: items,
-      totalCount: items.length,
+      success: true,
+      data: items || [],
+      videos: items || [],
+      totalCount,
+      total: totalCount,
       zeroStorageCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit) || 1,
     });
   } catch (error: any) {
-    console.error('Failed to query telegram-uploaded videos:', error);
+    console.error('Failed to query telegram-uploaded videos from Supabase:', error);
     res.status(500).json({ error: error.message || 'Failed to query telegram-uploaded videos' });
   }
 });
 
-// 8c. PATCH /api/telegram-uploaded/:id - Update video title/details
-r2VideosRouter.patch('/api/telegram-uploaded/:id', async (req, res) => {
+// Update title for telegram uploaded video
+r2VideosRouter.patch(['/api/telegram-uploaded/:id', '/api/telegram-bot/uploaded/:id'], async (req, res) => {
   try {
-    await connectToDatabase();
+    const sb = getSupabaseClient();
+    if (!sb) return res.status(503).json({ error: 'Supabase client not configured' });
     const id = req.params.id;
     const { title } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
-    await Promise.all([
-      TrackedFileModel.updateOne({ id }, { $set: { title, file_name: title } }),
-      UploadedVideoModel.updateOne({ id }, { $set: { title } }),
-    ]);
+    const { data, error } = await sb
+      .from('telegram_uploaded')
+      .update({ title: title.trim() })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
 
-    res.json({ success: true, message: 'Video title updated' });
+    if (error) throw error;
+    res.json({ success: true, message: 'Video title updated', data });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to update video' });
   }
 });
 
-// 8d. DELETE /api/telegram-uploaded/:id - Delete video from MongoDB
-r2VideosRouter.delete('/api/telegram-uploaded/:id', async (req, res) => {
+// Delete single telegram uploaded video
+r2VideosRouter.delete(['/api/telegram-uploaded/:id', '/api/telegram-bot/uploaded/:id'], async (req, res) => {
   try {
-    await connectToDatabase();
+    const sb = getSupabaseClient();
+    if (!sb) return res.status(503).json({ error: 'Supabase client not configured' });
     const id = req.params.id;
-    await Promise.all([
-      TrackedFileModel.deleteOne({ id }),
-      UploadedVideoModel.deleteOne({ id }),
-    ]);
+
+    const { error } = await sb
+      .from('telegram_uploaded')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
     res.json({ success: true, message: 'Video deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to delete video' });
   }
 });
 
-// 8e. POST /api/telegram-uploaded/bulk-delete - Bulk delete videos from MongoDB
+// Bulk delete telegram uploaded videos
 r2VideosRouter.post('/api/telegram-uploaded/bulk-delete', async (req, res) => {
   try {
-    await connectToDatabase();
+    const sb = getSupabaseClient();
+    if (!sb) return res.status(503).json({ error: 'Supabase client not configured' });
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'IDs array required' });
     }
 
-    await Promise.all([
-      TrackedFileModel.deleteMany({ id: { $in: ids } }),
-      UploadedVideoModel.deleteMany({ id: { $in: ids } }),
-    ]);
+    const { error } = await sb
+      .from('telegram_uploaded')
+      .delete()
+      .in('id', ids);
 
+    if (error) throw error;
     res.json({ success: true, count: ids.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to bulk delete videos' });

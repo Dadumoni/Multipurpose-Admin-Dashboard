@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 import { initConsoleLogger } from './src/server/logger.js';
-import { initStatsChangeStream } from './src/server/statsManager.js';
 
 // Modular Route Handlers
 import { statsRouter } from './src/server/routes/stats.js';
@@ -137,7 +136,6 @@ async function startServer() {
 
   app.listen(port, host, () => {
     console.log(`Server running at http://${host}:${port}`);
-    initStatsChangeStream().catch((err: any) => console.warn('[StatsManager] Change stream notice:', err.message));
   });
 }
 
