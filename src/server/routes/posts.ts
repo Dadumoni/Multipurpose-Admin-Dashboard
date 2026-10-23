@@ -4,7 +4,7 @@ import { cacheGet, cacheSet, invalidatePostsCache } from '../cache.js';
 
 export const postsRouter = express.Router();
 
-const POSTS_PROJECTION = 'id, slug, title, 480p_link, 720p_link, thumbnail_url, views, scraped_at, domain, duration, post_url, video_url, is_expired, created_at';
+const POSTS_PROJECTION = 'id, slug, title, 480p_link, 720p_link, thumbnail_url, views, scraped_at, domain, duration, post_url, is_expired, created_at';
 
 // 1. GET /api/posts - Query Supabase viralhub_db with Server-Side Pagination, Field Projection, and FIFO Queue ordering
 postsRouter.get('/api/posts', async (req, res) => {
